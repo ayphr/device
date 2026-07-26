@@ -246,7 +246,7 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
             <div className={styles['settings-page__about-links']}>
               <IconButton
                 icon={<IconBrandGithub size={16} />}
-                onClick={() => openUrl('https://github.com/ayphr/companion')}
+                onClick={() => openUrl('https://github.com/ayphr/device')}
                 borderless={false}
               />
               <IconButton
