@@ -1,0 +1,18 @@
+pub const COMMAND_GET_STATUS: u8 = 0x01;
+pub const COMMAND_AUTHENTICATE: u8 = 0x02;
+pub const COMMAND_APPLY_SETUP: u8 = 0x03;
+pub const COMMAND_RESTART: u8 = 0x04;
+pub const COMMAND_FACTORY_RESET: u8 = 0x05;
+pub const COMMAND_CHANGE_PASSWORD: u8 = 0x06;
+pub const COMMAND_UPDATE_WIFI: u8 = 0x07;
+
+pub const RESPONSE_STATUS: u8 = 0x81;
+pub const RESPONSE_AUTH_OK: u8 = 0x82;
+pub const RESPONSE_AUTH_FAILED: u8 = 0x83;
+pub const RESPONSE_SETUP_OK: u8 = 0x84;
+pub const RESPONSE_RESTART_OK: u8 = 0x85;
+pub const RESPONSE_FACTORY_RESET_OK: u8 = 0x86;
+pub const RESPONSE_CHANGE_PASSWORD_OK: u8 = 0x87;
+pub const RESPONSE_SETUP_FAILED: u8 = 0x88;
+pub const RESPONSE_UPDATE_WIFI_OK: u8 = 0x89;
+pub const RESPONSE_ERROR: u8 = 0xFF;

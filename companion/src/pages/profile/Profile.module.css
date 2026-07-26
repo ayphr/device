@@ -1,0 +1,17 @@
+.profile-page {
+  min-height: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.profile-page__card {
+  width: min(42rem, 100%);
+  margin-top: 2rem;
+}
+
+@media (max-width: 820px) {
+  .profile-page__card {
+    margin-top: 0.5rem;
+  }
+}

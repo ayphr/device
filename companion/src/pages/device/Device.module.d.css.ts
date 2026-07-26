@@ -1,0 +1,26 @@
+declare const classNames: {
+  readonly "device-page": "device-page";
+  readonly "device-page__shell": "device-page__shell";
+  readonly "device-page__sidebar": "device-page__sidebar";
+  readonly "device-page__nav": "device-page__nav";
+  readonly "device-page__nav-item": "device-page__nav-item";
+  readonly "device-page__nav-item--active": "device-page__nav-item--active";
+  readonly "device-page__content": "device-page__content";
+  readonly "device-page__content-header": "device-page__content-header";
+  readonly "device-page__stacked-grid": "device-page__stacked-grid";
+  readonly "device-page__back": "device-page__back";
+  readonly "device-page__hero": "device-page__hero";
+  readonly "device-page__panel": "device-page__panel";
+  readonly "device-page__eyebrow": "device-page__eyebrow";
+  readonly "device-page__metrics": "device-page__metrics";
+  readonly "device-page__metric-card": "device-page__metric-card";
+  readonly "device-page__metric-label": "device-page__metric-label";
+  readonly "device-page__definition-list": "device-page__definition-list";
+  readonly "device-page__definition-list--wide": "device-page__definition-list--wide";
+  readonly "device-page__control-list": "device-page__control-list";
+  readonly "device-page__reading-list": "device-page__reading-list";
+  readonly "device-page__setting-row": "device-page__setting-row";
+  readonly "device-page__setting-list": "device-page__setting-list";
+  readonly "device-page__setting-value": "device-page__setting-value";
+};
+export = classNames;

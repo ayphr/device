@@ -1,0 +1,15 @@
+{
+  "task.problemMatchers.neverPrompt": true,
+
+  "rust-analyzer.linkedProjects": [
+    "Cargo.toml",
+    "shared/Cargo.toml",
+    "firmware/Cargo.toml",
+    "app/src-tauri/Cargo.toml"
+  ],
+
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.check.extraArgs": ["--workspace"],
+
+  "rust-analyzer.cargo.target": "riscv32imc-unknown-none-elf",
+}

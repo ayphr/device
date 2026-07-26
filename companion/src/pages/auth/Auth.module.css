@@ -1,0 +1,53 @@
+.auth-page {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.auth-page__card {
+  width: min(100%, 32rem);
+}
+
+.auth-page__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0.2rem 0;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.auth-page__back:hover {
+  color: var(--text-primary);
+}
+
+.auth-page__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.auth-page__header h1 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(1.8rem, 4vw, 2.3rem);
+  line-height: 1.05;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.auth-page__header p {
+  margin-top: 0.3rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.auth-page__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}

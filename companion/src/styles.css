@@ -1,0 +1,113 @@
+@font-face {
+  font-family: "DM Sans";
+  src: url("./assets/fonts/DM-Sans.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "DM Mono";
+  src: url("./assets/fonts/DM-Mono.ttf") format("truetype");
+}
+
+:root {
+  --font-family-base: "DM Sans", sans-serif;
+  --font-family-mono: "DM Mono", monospace;
+
+  --bg-base: rgb(18, 18, 18);
+  --bg-surface: hsl(0, 0%, 10%);
+  --bg-elevated: hsl(0, 0%, 15%);
+  --bg-input: hsl(0, 0%, 23%);
+  --bg-input-off: hsl(0, 0%, 20%);
+
+  --border: hsl(90, 0%, 25%);
+  --border-focus: hsl(0, 0%, 30%);
+  --border-subtle: hsl(0, 0%, 20%);
+
+  --text-primary: hsla(180, 67%, 99%, 1);
+  --text-muted: hsla(180, 67%, 99%, 0.5);
+  --text-muted-opaque: rgb(152, 154, 154);
+  --text-dim: hsla(180, 67%, 99%, 0.25);
+
+  --accent-green: hsla(129, 77%, 43%, 0.75);
+  --accent-yellow: hsla(41, 99%, 59%, 0.75);
+  --accent-red: hsla(4, 100%, 71%, 0.75);
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+
+  --container-shadow: 0 2px 0.5rem rgba(0, 0, 0, 0.3);
+
+  --font-weight-li: 400;
+  --font-weight-md: 600;
+  --font-weight-hv: 800;
+
+  --divider-color: rgba(255, 255, 255, 0.25);
+
+  --status-success: hsl(129, 77%, 60%);
+  --status-error: hsl(4, 100%, 71%);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  color: var(--text-primary);
+  font-family: var(--font-family-base);
+  font-size: 1rem;
+  font-weight: var(--font-weight-li);
+  line-height: 1.4;
+  overflow: hidden;
+  user-select: none;
+  text-rendering: optimizeLegibility;
+  background-color: var(--bg-base);
+}
+
+img.emoji {
+  height: 1em;
+  width: 1em;
+  margin: 0 0.05em 0 0.1em;
+  vertical-align: -0.1em;
+  user-select: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+
+body::-webkit-scrollbar {
+  width: 0.5rem;
+}
+
+body::-webkit-scrollbar-thumb {
+  background: var(--text-dim);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}

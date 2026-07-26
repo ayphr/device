@@ -1,0 +1,113 @@
+name: App Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-upload:
+    name: Build ${{ matrix.platform }} (${{ matrix.target || 'default' }})
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ""
+            rust-targets: ""
+            apt-packages: >-
+              libwebkit2gtk-4.1-dev
+              libappindicator3-dev
+              librsvg2-dev
+              patchelf
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+            rust-targets: aarch64-apple-darwin
+            apt-packages: ""
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+            rust-targets: x86_64-apple-darwin
+            apt-packages: ""
+          - platform: windows-latest
+            args: ""
+            rust-targets: ""
+            apt-packages: ""
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: companion/src-tauri -> target
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt-packages }}
+
+      - name: Install frontend dependencies
+        run: cd companion && npm ci
+
+      - name: Sync package version to release tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          export VERSION
+
+          node <<'NODE'
+          const fs = require('fs');
+          const version = process.env.VERSION;
+
+          // Update package.json
+          const packageJson = JSON.parse(fs.readFileSync('companion/package.json', 'utf8'));
+          packageJson.version = version;
+          fs.writeFileSync('companion/package.json', `${JSON.stringify(packageJson, null, 2)}\n`);
+
+          // Update tauri.conf.json
+          const tauriConfig = JSON.parse(fs.readFileSync('companion/src-tauri/tauri.conf.json', 'utf8'));
+          tauriConfig.version = version;
+          fs.writeFileSync('companion/src-tauri/tauri.conf.json', `${JSON.stringify(tauriConfig, null, 2)}\n`);
+
+          // Update Cargo.toml
+          const cargoPath = 'companion/src-tauri/Cargo.toml';
+          const cargoToml = fs.readFileSync(cargoPath, 'utf8').replace(
+            /^version = ".*"$/m,
+            `version = "${version}"`,
+          );
+          fs.writeFileSync(cargoPath, cargoToml);
+          NODE
+
+      - name: Build and upload Tauri release assets
+        uses: tauri-apps/tauri-action@v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: companion
+          releaseId: ${{ github.event.release.id }}
+          tagName: ${{ github.event.release.tag_name }}
+          releaseDraft: ${{ github.event.release.draft }}
+          prerelease: ${{ github.event.release.prerelease }}
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}

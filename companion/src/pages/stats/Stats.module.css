@@ -1,0 +1,17 @@
+.stats-page {
+  min-height: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.stats-page__card {
+  width: min(42rem, 100%);
+  margin-top: 2rem;
+}
+
+@media (max-width: 820px) {
+  .stats-page__card {
+    margin-top: 0.5rem;
+  }
+}

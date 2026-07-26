@@ -1,0 +1,24 @@
+declare const classNames: {
+  readonly "setup-page": "setup-page";
+  readonly "setup-page__progress-pill": "setup-page__progress-pill";
+  readonly "setup-page__progress-step": "setup-page__progress-step";
+  readonly "setup-page__progress-step--active": "setup-page__progress-step--active";
+  readonly "setup-page__progress-step--complete": "setup-page__progress-step--complete";
+  readonly "setup-page__progress-icon": "setup-page__progress-icon";
+  readonly "setup-page__intro-card": "setup-page__intro-card";
+  readonly "setup-page__flow-card": "setup-page__flow-card";
+  readonly "setup-page__intro-header": "setup-page__intro-header";
+  readonly "setup-page__flow-header": "setup-page__flow-header";
+  readonly "setup-page__flow-step": "setup-page__flow-step";
+  readonly "setup-page__intro-grid": "setup-page__intro-grid";
+  readonly "setup-page__back": "setup-page__back";
+  readonly "setup-page__eyebrow": "setup-page__eyebrow";
+  readonly "setup-page__lead": "setup-page__lead";
+  readonly "setup-page__section": "setup-page__section";
+  readonly "setup-page__form-grid": "setup-page__form-grid";
+  readonly "setup-page__tos-card": "setup-page__tos-card";
+  readonly "setup-page__tos-card--active": "setup-page__tos-card--active";
+  readonly "setup-page__summary": "setup-page__summary";
+  readonly "setup-page__submit-error": "setup-page__submit-error";
+};
+export = classNames;

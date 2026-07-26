@@ -1,0 +1,140 @@
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(3px);
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+
+  to {
+    opacity: 1;
+    backdrop-filter: blur(4px);
+  }
+}
+
+.modal {
+  background-color: hsl(0, 0%, 13%);
+  border: 1px solid hsl(0, 0%, 20%);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1001;
+}
+
+.modal--sm {
+  width: 90%;
+  max-width: 400px;
+}
+
+.modal--md {
+  width: 90%;
+  max-width: 600px;
+}
+
+.modal--lg {
+  width: 90%;
+  max-width: 900px;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.75rem;
+  border-bottom: none;
+  flex-shrink: 0;
+  padding-bottom: 1rem;
+}
+
+.modal__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.modal__close {
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  width: 36px;
+  height: 36px;
+
+  &:hover {
+    color: var(--text-primary);
+    background-color: hsl(0, 0%, 20%);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent-green);
+    border-radius: var(--radius-md);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+}
+
+.modal__body {
+  padding: 1.75rem;
+  padding-top: 0;
+  color: var(--text-primary);
+  flex: 1;
+  overflow-y: auto;
+  font-size: 0.95rem;
+  line-height: 1.6;
+
+  & > *:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.modal__footer {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  padding: 1.75rem;
+  padding-top: 0;
+  border-top: none;
+  flex-shrink: 0;
+  align-items: center;
+}

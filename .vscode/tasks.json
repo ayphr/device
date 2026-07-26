@@ -1,0 +1,66 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build Firmware",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["+esp", "build", "--release", "--target", "xtensa-esp32-espidf"],
+      "options": {
+        "cwd": "${workspaceFolder}/firmware"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Flash Firmware",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "espflash",
+        "flash",
+        "--release",
+        "--target",
+        "xtensa-esp32-espidf",
+        "--monitor"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/firmware"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Monitor Serial",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["espflash", "monitor"],
+      "options": {
+        "cwd": "${workspaceFolder}/firmware"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build Protocol Crate",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["build"],
+      "options": {
+        "cwd": "${workspaceFolder}/shared"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Run Dev App",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "tauri", "dev"],
+      "options": {
+        "cwd": "${workspaceFolder}/companion"
+      },
+      "problemMatcher": ["$rustc"]
+    }
+  ]
+}

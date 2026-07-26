@@ -1,0 +1,35 @@
+.settings-switch {
+  margin-top: 0.1rem;
+  width: 2.95rem;
+  height: 1.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg-input-off);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.18s ease;
+}
+
+.settings-switch span {
+  position: absolute;
+  top: 0.2rem;
+  left: 0.22rem;
+  width: 1.08rem;
+  height: 1.08rem;
+  border-radius: 999px;
+  background: var(--text-primary);
+  transition: transform 0.18s ease;
+}
+
+.settings-switch--on {
+  background: var(--status-error);
+}
+
+.settings-switch--on.settings-switch--on__green {
+  background: var(--status-success);
+}
+
+.settings-switch--on span {
+  transform: translateX(1.44rem);
+}
