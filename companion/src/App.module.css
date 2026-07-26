@@ -4,18 +4,7 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background:
-    radial-gradient(
-      1100px 500px at 50% -180px,
-      color-mix(in srgb, var(--status-error) 12%, transparent),
-      transparent 70%
-    ),
-    linear-gradient(
-      180deg,
-      var(--bg-base) 0%,
-      color-mix(in srgb, var(--bg-base) 88%, black) 24%,
-      color-mix(in srgb, var(--bg-base) 92%, black) 100%
-    );
+  background: var(--bg-base);
 }
 
 .app-topbar {
