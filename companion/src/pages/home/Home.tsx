@@ -13,11 +13,11 @@ interface HomeProps {
 export default function Home({ devices, isSearchingForGeoDevices, onOpenDevice }: Readonly<HomeProps>) {
   function getModelIcon(id: string): ReactNode {
     switch (id) {
-      case 'geo-mk1':
+      case 'geo-gen1':
         return <IconSquareRotated size={16} />;
-      case 'geo-mk2':
+      case 'geo-gen2':
         return <IconSquareRotatedFilled size={16} />;
-      case 'geo-mk3':
+      case 'geo-gen3':
         return <IconSquareRotatedForbid size={16} />;
       default:
         return null;

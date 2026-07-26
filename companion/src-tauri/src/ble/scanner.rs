@@ -61,7 +61,7 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
                 .unwrap_or_else(|| format!("BLE device {}", peripheral_id));
             let rssi = properties.rssi;
             let signal_strength = signal_strength_from_rssi(rssi);
-            let model_id = "geo-mk1".to_string();
+            let model_id = "geo-gen1".to_string();
             let connectable = properties.rssi.is_some();
             let setup_complete = properties
                 .manufacturer_data

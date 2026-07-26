@@ -1,4 +1,4 @@
-export type DeviceModelId = 'geo-mk1' | 'geo-mk2' | 'geo-mk3';
+export type DeviceModelId = 'geo-gen1' | 'geo-gen2' | 'geo-gen3';
 
 export interface DeviceModel {
   id: DeviceModelId;
@@ -23,9 +23,9 @@ export interface DeviceInfo {
 }
 
 export const DEVICE_MODELS: Record<DeviceModelId, DeviceModel> = {
-  'geo-mk1': { id: 'geo-mk1', name: 'Geo Mk1' },
-  'geo-mk2': { id: 'geo-mk2', name: 'Geo Mk2' },
-  'geo-mk3': { id: 'geo-mk3', name: 'Geo Mk3' },
+  'geo-gen1': { id: 'geo-gen1', name: 'Geo Gen1' },
+  'geo-gen2': { id: 'geo-gen2', name: 'Geo Gen2' },
+  'geo-gen3': { id: 'geo-gen3', name: 'Geo Gen3' },
 };
 
 export function signalStrengthLabel(signalStrength: number | null) {
