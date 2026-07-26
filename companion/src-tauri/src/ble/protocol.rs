@@ -3,9 +3,10 @@ use btleplug::api::Peripheral as _;
 use uuid::Uuid;
 use tracing::{debug, warn};
 
-use super::constants::{
-    COMMAND_GET_STATUS, COMMAND_TIMEOUT, RESPONSE_STATUS,
+use ayphr_protocol::{
+    COMMAND_GET_STATUS, RESPONSE_STATUS,
 };
+use super::constants::COMMAND_TIMEOUT;
 use super::state::{ActiveBleConnection, ParsedStatus};
 
 pub async fn query_status(connection: &ActiveBleConnection) -> Result<ParsedStatus, String> {
