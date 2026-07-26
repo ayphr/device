@@ -110,6 +110,6 @@ jobs:
           releaseId: ${{ github.event.release.id }}
           releaseDraft: ${{ github.event.release.draft }}
           prerelease: ${{ github.event.release.prerelease }}
-          includeReleaseNotes: true
+          generateReleaseNotes: true
           includeUpdaterJson: true
           args: ${{ matrix.args }}
