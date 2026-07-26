@@ -4,10 +4,9 @@ use std::collections::HashMap;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 
-use super::constants::{
-    DEVICE_RETENTION_WINDOW, FIRMWARE_MANUFACTURER_ID, SCAN_INTERVAL,
-};
 use super::state::{upsert_live_peripheral, BleDeviceSnapshot, BleDeviceStore};
+use ayphr_protocol::{FIRMWARE_MANUFACTURER_ID, FIRMWARE_SERVICE_UUID};
+use super::constants::{DEVICE_RETENTION_WINDOW, SCAN_INTERVAL};
 
 pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(), String> {
     let adapter = get_primary_adapter().await?;
@@ -45,8 +44,11 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
             let has_firmware_manufacturer_marker = properties
                 .manufacturer_data
                 .contains_key(&FIRMWARE_MANUFACTURER_ID);
+            let has_firmware_service_uuid = advertised_service_uuids
+                .iter()
+                .any(|uuid| uuid == FIRMWARE_SERVICE_UUID);
 
-            if !has_firmware_manufacturer_marker {
+            if !has_firmware_manufacturer_marker || !has_firmware_service_uuid {
                 continue;
             }
 

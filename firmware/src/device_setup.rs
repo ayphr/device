@@ -25,6 +25,12 @@ pub struct DeviceSetup {
     state: Mutex<State>,
 }
 
+impl DeviceSetup {
+    pub fn is_configured(&self) -> bool {
+        self.state.lock().unwrap().data.configured
+    }
+}
+
 struct State {
     data: DeviceSetupData,
     authenticated: bool,

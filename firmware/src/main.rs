@@ -2,7 +2,7 @@ mod device_setup;
 
 use crate::device_setup::DeviceSetup;
 use bme280_multibus::Bme280;
-use esp32_nimble::{BLEDevice, NimbleProperties};
+use esp32_nimble::{BLEDevice, NimbleProperties, BLEAdvertisementData};
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver};
 use esp_idf_svc::hal::peripherals::Peripherals;
@@ -12,6 +12,8 @@ use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 use log::{error, info, warn};
 use std::sync::Arc;
 use std::time::Duration;
+
+use ayphr_protocol::{FIRMWARE_MANUFACTURER_ID, FIRMWARE_RX_CHARACTERISTIC_UUID, FIRMWARE_SERVICE_UUID, FIRMWARE_TX_CHARACTERISTIC_UUID};
 
 fn main() -> anyhow::Result<()> {
     esp_idf_svc::sys::link_patches();
@@ -49,9 +51,9 @@ fn main() -> anyhow::Result<()> {
         setup_clone.reset_authentication();
     });
 
-    let service_uuid = esp32_nimble::uuid128!("D17B4AB0-39B8-4155-9A6A-62CE18171701");
-    let rx_uuid = esp32_nimble::uuid128!("D17B4AB0-39B8-4155-9A6A-62CE18171702");
-    let tx_uuid = esp32_nimble::uuid128!("D17B4AB0-39B8-4155-9A6A-62CE18171703");
+    let service_uuid = esp32_nimble::uuid128!(FIRMWARE_SERVICE_UUID);
+    let rx_uuid = esp32_nimble::uuid128!(FIRMWARE_RX_CHARACTERISTIC_UUID);
+    let tx_uuid = esp32_nimble::uuid128!(FIRMWARE_TX_CHARACTERISTIC_UUID);
 
     let service = server.create_service(service_uuid);
     let rx_char = service
@@ -78,8 +80,27 @@ fn main() -> anyhow::Result<()> {
 
     let dev_name = setup.device_name_for_advertising();
     esp32_nimble::BLEDevice::set_device_name(&dev_name).unwrap();
+
+    let mut adv_data = BLEAdvertisementData::new();
+    adv_data.name(&dev_name);
+    adv_data.add_service_uuid(service_uuid);
+
+    let setup_complete_flag = if setup.is_configured() { 1u8 } else { 0u8 };
+    let manufacturer_data_payload = vec![setup_complete_flag];
+
+    let mut mfg_data = Vec::new();
+    mfg_data.extend_from_slice(&FIRMWARE_MANUFACTURER_ID.to_le_bytes());
+    mfg_data.extend_from_slice(&manufacturer_data_payload);
+
+    adv_data.manufacturer_data(&mfg_data);
+
+    ble_advertising.lock().set_data(&mut adv_data)?;
     ble_advertising.lock().start()?;
-    info!("BLE advertising started with name='{}'", dev_name);
+
+    info!(
+        "BLE advertising started with name='{}', Service UUID='{}', Manufacturer ID=0x{:04X}",
+        dev_name, service_uuid, FIRMWARE_MANUFACTURER_ID
+    );
 
     let i2c_config = I2cConfig::new().baudrate(Hertz(400_000).into());
     let i2c_driver = I2cDriver::new(
