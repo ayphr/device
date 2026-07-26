@@ -44,9 +44,9 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          cache-dependency-path: companion
           node-version: lts/*
           cache: npm
+          cache-dependency-path: companion/package-lock.json
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -99,16 +99,17 @@ jobs:
           NODE
 
       - name: Build and upload Tauri release assets
-        uses: tauri-apps/tauri-action@v0.6.2
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: companion
-          releaseId: ${{ github.event.release.id }}
           tagName: ${{ github.event.release.tag_name }}
+          releaseId: ${{ github.event.release.id }}
           releaseDraft: ${{ github.event.release.draft }}
           prerelease: ${{ github.event.release.prerelease }}
+          includeReleaseNotes: true
           includeUpdaterJson: true
           args: ${{ matrix.args }}
