@@ -38,7 +38,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk0NUUwRTZEMTAwNjI4REEKUldUYUtBWVFiUTVlbEk3OEtuL2pZbmV5VTNkdnlTT0tkUEpFTUlNVU9MY2JkMWgvOWlaN1dvQTAK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU1MjRCMEVBOTBBMzVGRTMKUldUalg2T1E2ckFrVldrTGNrakVGWHhCTk5hdGQ1K1hhVXBrT1lmYjdoM2F6T2VvbEVWR1kxUjUK",
       "endpoints": [
         "https://github.com/ayphr/device/releases/latest/download/latest.json"
       ]
