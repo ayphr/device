@@ -2,6 +2,7 @@ name: Bug Report
 description: Report a bug or issue
 title: "[Bug]: "
 type: Bug
+labels: ["triage needed"]
 body:
   - type: textarea
     id: description

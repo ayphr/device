@@ -2,6 +2,7 @@ name: Feature Request
 description: Propose a new feature
 title: "[Feature]: "
 type: Feature
+labels: ["triage needed"]
 body:
   - type: textarea
     id: description
