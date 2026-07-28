@@ -1,8 +1,9 @@
 name: App Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'app-v*'
 
 jobs:
   build-and-upload:

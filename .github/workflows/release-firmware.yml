@@ -1,0 +1,64 @@
+name: Release Firmware
+
+on:
+  push:
+    tags:
+      - 'firmware-v*'
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  build:
+    name: Build & Test Firmware
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Cargo registry & ESP toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/
+            ~/.rustup/
+            firmware/target/
+          key: ${{ runner.os }}-esp32-cargo-${{ hashFiles('firmware/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-esp32-cargo-
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libclang-dev dfu-util python3 python3-pip
+
+      - name: Setup Xtensa Rust Toolchain
+        uses: esp-rs/xtensa-toolchain@v1.5
+        with:
+          default: true
+          buildtargets: "esp32"
+          ldproxy: true
+
+      - name: Code Formatting Check
+        run: cargo fmt --check
+        working-directory: ./firmware
+
+      - name: Cargo Check (Fast linting)
+        run: cargo check --target xtensa-esp32-espidf
+        working-directory: ./firmware
+
+      - name: Build Firmware (Release)
+        run: cargo build --release --target xtensa-esp32-espidf
+        working-directory: ./firmware
+
+      - name: Run Host Unit Tests (Optional)
+        run: cargo test --lib --target x86_64-unknown-linux-gnu
+        working-directory: ./firmware
+        continue-on-error: true
