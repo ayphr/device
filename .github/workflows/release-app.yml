@@ -71,26 +71,23 @@ jobs:
       - name: Sync package version to release tag
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          VERSION="${RELEASE_TAG#v}"
+          VERSION="${RELEASE_TAG#app-v}" # Strip 'app-v' prefix to extract pure semver
           export VERSION
 
           node <<'NODE'
           const fs = require('fs');
           const version = process.env.VERSION;
 
-          // Update package.json
           const packageJson = JSON.parse(fs.readFileSync('companion/package.json', 'utf8'));
           packageJson.version = version;
           fs.writeFileSync('companion/package.json', `${JSON.stringify(packageJson, null, 2)}\n`);
 
-          // Update tauri.conf.json
           const tauriConfig = JSON.parse(fs.readFileSync('companion/src-tauri/tauri.conf.json', 'utf8'));
           tauriConfig.version = version;
           fs.writeFileSync('companion/src-tauri/tauri.conf.json', `${JSON.stringify(tauriConfig, null, 2)}\n`);
 
-          // Update Cargo.toml
           const cargoPath = 'companion/src-tauri/Cargo.toml';
           const cargoToml = fs.readFileSync(cargoPath, 'utf8').replace(
             /^version = ".*"$/m,
@@ -107,10 +104,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: companion
-          tagName: ${{ github.event.release.tag_name }}
-          releaseId: ${{ github.event.release.id }}
-          releaseDraft: ${{ github.event.release.draft }}
-          prerelease: ${{ github.event.release.prerelease }}
+          tagName: ${{ github.ref_name }}
+          releaseName: 'App ${{ github.ref_name }}'
           generateReleaseNotes: true
           includeUpdaterJson: true
           args: ${{ matrix.args }}
