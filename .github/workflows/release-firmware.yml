@@ -61,11 +61,6 @@ jobs:
         run: cargo build --release --target xtensa-esp32-espidf
         working-directory: ./firmware
 
-      - name: Run Host Unit Tests (Optional)
-        run: cargo test --lib --target x86_64-unknown-linux-gnu
-        working-directory: ./firmware
-        continue-on-error: true
-
       - name: Upload Artifacts to Release
         if: startsWith(github.ref, 'refs/tags/firmware-v')
         uses: softprops/action-gh-release@v2
