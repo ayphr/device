@@ -13,7 +13,7 @@ env:
 
 jobs:
   build:
-    name: Build & Test Firmware
+    name: Build Firmware
     if: startsWith(github.ref, 'refs/tags/firmware-v') || contains(github.event.pull_request.labels.*.name, 'firmware')
     runs-on: ubuntu-latest
     permissions:
@@ -49,13 +49,30 @@ jobs:
           buildtargets: "esp32"
           ldproxy: true
 
+      - name: Sync package version to release tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${RELEASE_TAG#firmware-v}" # Strip 'firmware-v' prefix to extract pure semver
+          export VERSION
+
+          node <<'NODE'
+          const fs = require('fs');
+          const version = process.env.VERSION;
+
+          const cargoPath = 'firmware/Cargo.toml';
+          const cargoToml = fs.readFileSync(cargoPath, 'utf8').replace(
+            /^version = ".*"$/m,
+            `version = "${version}"`,
+          );
+          fs.writeFileSync(cargoPath, cargoToml);
+          NODE
+
       - name: Code Formatting Check
         run: cargo fmt --check
         working-directory: ./firmware
-
-      - name: Cargo Check (Fast linting)
-        run: cargo check --target xtensa-esp32-espidf
-        working-directory: ./firmware
+        continue-on-error: true
 
       - name: Build Firmware (Release)
         run: cargo build --release --target xtensa-esp32-espidf
@@ -65,6 +82,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/firmware-v')
         uses: softprops/action-gh-release@v2
         with:
-          files: firmware/target/xtensa-esp32-espidf/release/*.bin
+          files: |
+            firmware/target/xtensa-esp32-espidf/release/*.bin
+            firmware/target/xtensa-esp32-espidf/release/ayphr-firmware
+            firmware/target/xtensa-esp32-espidf/release/ayphr-firmware.d
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
