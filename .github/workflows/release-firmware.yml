@@ -54,10 +54,6 @@ jobs:
         working-directory: ./firmware
         continue-on-error: true
 
-      - name: Cargo Check (Fast linting)
-        run: cargo check --target xtensa-esp32-espidf
-        working-directory: ./firmware
-
       - name: Build Firmware (Release)
         run: cargo build --release --target xtensa-esp32-espidf
         working-directory: ./firmware
