@@ -1,5 +1,6 @@
 name: Pull Request
 description: Propose a new change
+labels: ["triage needed"]
 body:
   - type: textarea
     id: description
