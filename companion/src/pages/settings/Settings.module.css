@@ -140,6 +140,8 @@
   .settings-page__sidebar {
     border-right: 0;
     border-bottom: 1px solid var(--border-subtle);
+    overflow-x: scroll;
+    overflow-y: hidden
   }
 
   .settings-page__nav {
