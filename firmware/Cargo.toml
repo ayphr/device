@@ -23,6 +23,7 @@ embuild = "0.33.2"
 
 [profile.dev]
 panic = "abort"
+opt-level = "s"
 
 [profile.release]
 panic = "abort"

@@ -15,10 +15,34 @@ import { loadAppSettings, saveAppSettings, type AppSettings } from './lib/settin
 import { disable, enable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import styles from './App.module.css';
 import logo from './assets/logo.svg';
+
+interface BleConnectionState {
+  connected: boolean;
+  authenticated: boolean;
+  authRequired: boolean;
+  setupComplete: boolean;
+  deviceName: string;
+}
+
+function replaceDevicesForTransport(currentDevices: DeviceInfo[], incomingDevices: DeviceInfo[]) {
+  const transport = incomingDevices[0]?.transport;
+
+  if (!transport) {
+    return currentDevices;
+  }
+
+  const retainedDevices = currentDevices.filter((device) => device.transport !== transport);
+  return [...retainedDevices, ...incomingDevices];
+}
+
+function mergeInitialDevices(...deviceGroups: DeviceInfo[][]) {
+  return deviceGroups.flat();
+}
 
 function App() {
   const [page, setPage] = useState<CurrentPage>('home');
@@ -175,16 +199,20 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     let unlistenDevices: (() => void) | undefined;
+    let unlistenSerialDevices: (() => void) | undefined;
 
     const seedDevices = async () => {
       try {
-        const initialDevices = await invoke<DeviceInfo[]>('get_ble_devices');
+        const [bleDevices, serialDevices] = await Promise.all([
+          invoke<DeviceInfo[]>('get_ble_devices'),
+          invoke<DeviceInfo[]>('get_serial_devices'),
+        ]);
 
         if (!cancelled) {
-          setDevices(initialDevices);
+          setDevices(mergeInitialDevices(bleDevices, serialDevices));
         }
       } catch (error) {
-        console.error('Failed to load BLE devices', error);
+        console.error('Failed to load devices', error);
       } finally {
         if (!cancelled) {
           setIsSearchingForGeoDevices(false);
@@ -195,7 +223,7 @@ function App() {
     void seedDevices();
 
     void listen<DeviceInfo[]>('ble-devices-updated', (event) => {
-      setDevices(event.payload);
+      setDevices((currentDevices) => replaceDevicesForTransport(currentDevices, event.payload));
     }).then((unlisten) => {
       if (cancelled) {
         unlisten();
@@ -205,11 +233,43 @@ function App() {
       unlistenDevices = unlisten;
     });
 
+    void listen<DeviceInfo[]>('serial-devices-updated', (event) => {
+      setDevices((currentDevices) => replaceDevicesForTransport(currentDevices, event.payload));
+    }).then((unlisten) => {
+      if (cancelled) {
+        unlisten();
+        return;
+      }
+
+      unlistenSerialDevices = unlisten;
+    });
+
     return () => {
       cancelled = true;
       unlistenDevices?.();
+      unlistenSerialDevices?.();
     };
   }, []);
+
+  useEffect(() => {
+    const currentWindow = getCurrentWindow();
+    let unlistenCloseRequested: (() => void) | undefined;
+
+    void currentWindow.onCloseRequested(async (event) => {
+      if (!settings.general.stayOpenInBackground) {
+        return;
+      }
+
+      event.preventDefault();
+      await currentWindow.hide();
+    }).then((unlisten) => {
+      unlistenCloseRequested = unlisten;
+    });
+
+    return () => {
+      unlistenCloseRequested?.();
+    };
+  }, [settings.general.stayOpenInBackground]);
 
   useEffect(() => {
     if (!selectedDevice) {
@@ -230,12 +290,44 @@ function App() {
     }
   }, [devices, page, selectedDevice]);
 
-  const openDevice = (device: DeviceInfo) => {
+  const openDevice = async (device: DeviceInfo) => {
     setSelectedDevice(device);
-    if (device.authenticated) {
-      setPage('device');
-    } else {
-      setPage(device.setupComplete ? 'auth' : 'setup');
+
+    if (!device.setupComplete) {
+      setPage('setup');
+      return;
+    }
+
+    try {
+      const connection = await invoke<BleConnectionState>(
+        device.transport === 'serial' ? 'connect_serial_device' : 'connect_ble_device',
+        { deviceId: device.id },
+      );
+
+      const updatedDevice = {
+        ...device,
+        name: connection.deviceName || device.name,
+        setupComplete: connection.setupComplete,
+        connected: connection.connected,
+        authenticated: connection.authenticated,
+        authRequired: connection.authRequired,
+      };
+
+      setSelectedDevice(updatedDevice);
+
+      if (device.transport === 'serial' || !connection.authRequired || connection.authenticated) {
+        setPage('device');
+      } else {
+        setPage('auth');
+      }
+    } catch (error) {
+      console.error('Failed to connect to device before routing', error);
+
+      if (device.authenticated) {
+        setPage('device');
+      } else {
+        setPage('auth');
+      }
     }
   };
 

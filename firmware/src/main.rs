@@ -2,11 +2,14 @@ mod device_setup;
 
 use crate::device_setup::DeviceSetup;
 use bme280_multibus::Bme280;
+use esp_idf_svc::hal::delay::BLOCK;
+use esp_idf_svc::hal::gpio::AnyIOPin;
 use esp32_nimble::{BLEDevice, NimbleProperties, BLEAdvertisementData};
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver};
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::hal::units::Hertz;
+use esp_idf_svc::hal::uart::{config::Config as UartConfig, UartDriver};
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 use log::{error, info, warn};
@@ -14,6 +17,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ayphr_protocol::{FIRMWARE_MANUFACTURER_ID, FIRMWARE_RX_CHARACTERISTIC_UUID, FIRMWARE_SERVICE_UUID, FIRMWARE_TX_CHARACTERISTIC_UUID};
+
+const SERIAL_BAUD_RATE: u32 = 115_200;
 
 fn main() -> anyhow::Result<()> {
     esp_idf_svc::sys::link_patches();
@@ -26,6 +31,9 @@ fn main() -> anyhow::Result<()> {
     let nvs_partition = EspDefaultNvsPartition::take()?;
 
     let setup = DeviceSetup::new(nvs_partition.clone())?;
+    let uart1 = peripherals.uart1;
+    let serial_tx = peripherals.pins.gpio17;
+    let serial_rx = peripherals.pins.gpio16;
 
     let _wifi = BlockingWifi::wrap(
         EspWifi::new(
@@ -75,6 +83,53 @@ fn main() -> anyhow::Result<()> {
         if !response.is_empty() {
             info!("Sending BLE setup response bytes={}", response.len());
             tx_char_writer.lock().set_value(&response).notify();
+        }
+    });
+
+    let serial_setup = Arc::clone(&setup);
+    std::thread::spawn(move || {
+        let config = UartConfig::default().baudrate(Hertz(SERIAL_BAUD_RATE));
+        let uart = match UartDriver::new(
+            uart1,
+            serial_tx,
+            serial_rx,
+            Option::<AnyIOPin>::None,
+            Option::<AnyIOPin>::None,
+            &config,
+        ) {
+            Ok(driver) => driver,
+            Err(error) => {
+                error!("Failed to initialize serial transport: {:?}", error);
+                return;
+            }
+        };
+
+        loop {
+            let mut length_buf = [0u8; 2];
+            if let Err(error) = read_exact(&uart, &mut length_buf) {
+                warn!("Serial frame length read failed: {:?}", error);
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+
+            let payload_len = u16::from_le_bytes(length_buf) as usize;
+            if payload_len == 0 {
+                continue;
+            }
+
+            let mut payload = vec![0u8; payload_len];
+            if let Err(error) = read_exact(&uart, &mut payload) {
+                warn!("Serial frame payload read failed: {:?}", error);
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+
+            info!("Received serial setup request bytes={}", payload.len());
+            let response = serial_setup.process_serial_request(&payload);
+
+            if let Err(error) = write_frame(&uart, &response) {
+                warn!("Failed to write serial response: {:?}", error);
+            }
         }
     });
 
@@ -145,4 +200,31 @@ fn main() -> anyhow::Result<()> {
 
         std::thread::sleep(Duration::from_secs(2));
     }
+}
+
+fn read_exact(uart: &UartDriver<'_>, mut buf: &mut [u8]) -> anyhow::Result<()> {
+    while !buf.is_empty() {
+        let read = uart.read(buf, BLOCK)?;
+        if read == 0 {
+            continue;
+        }
+        let tmp = buf;
+        buf = &mut tmp[read..];
+    }
+
+    Ok(())
+}
+
+fn write_frame(uart: &UartDriver<'_>, payload: &[u8]) -> anyhow::Result<()> {
+    let len = u16::try_from(payload.len())?;
+    let mut frame = Vec::with_capacity(2 + payload.len());
+    frame.extend_from_slice(&len.to_le_bytes());
+    frame.extend_from_slice(payload);
+
+    let mut written = 0;
+    while written < frame.len() {
+        written += uart.write(&frame[written..])?;
+    }
+
+    Ok(())
 }

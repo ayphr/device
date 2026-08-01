@@ -87,7 +87,9 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
   const handleRestart = async () => {
     setIsRestarting(true);
     try {
-      await invoke('restart_ble_device', { deviceId: device.id });
+      await invoke(device.transport === 'serial' ? 'restart_serial_device' : 'restart_ble_device', {
+        deviceId: device.id,
+      });
     } catch (error) {
       console.error('Failed to restart device:', error);
     } finally {
@@ -98,7 +100,9 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
   const handleFactoryReset = async () => {
     setIsResetResetting(true);
     try {
-      await invoke('factory_reset_ble_device', { deviceId: device.id });
+      await invoke(device.transport === 'serial' ? 'factory_reset_serial_device' : 'factory_reset_ble_device', {
+        deviceId: device.id,
+      });
       onBack();
     } catch (error) {
       console.error('Failed to factory reset device:', error);
@@ -109,6 +113,10 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
   };
 
   const handleChangePassword = async () => {
+    if (device.authRequired === false) {
+      return;
+    }
+
     if (newPassword.length < 8) {
       setPasswordError('New password must be at least 8 characters');
       return;
@@ -116,7 +124,7 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
     setIsChangingPassword(true);
     setPasswordError(null);
     try {
-      await invoke('change_ble_device_password', {
+      await invoke(device.transport === 'serial' ? 'change_serial_device_password' : 'change_ble_device_password', {
         deviceId: device.id,
         currentPassword,
         newPassword,
@@ -139,7 +147,7 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
     setIsUpdatingWifi(true);
     setWifiError(null);
     try {
-      await invoke('update_ble_device_wifi', {
+      await invoke(device.transport === 'serial' ? 'update_serial_device_wifi' : 'update_ble_device_wifi', {
         deviceId: device.id,
         ssid: wifiSsid.trim(),
         password: wifiPassword,
@@ -206,13 +214,19 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
             <IconWifi size={16} />
             Update Wi-Fi
           </Button>
-          <Button
-            variant="secondary"
-            onClick={() => setIsPasswordModalOpen(true)}
-          >
-            <IconLock size={16} />
-            Change password
-          </Button>
+          {device.authRequired === false ? (
+            <p style={{ margin: 0, color: 'var(--color-warning)' }}>
+              Authentication is disabled for this device, so password controls are hidden.
+            </p>
+          ) : (
+            <Button
+              variant="secondary"
+              onClick={() => setIsPasswordModalOpen(true)}
+            >
+              <IconLock size={16} />
+              Change password
+            </Button>
+          )}
           <Button
             variant="danger"
             onClick={() => setIsResetDialogOpen(true)}

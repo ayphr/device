@@ -124,6 +124,25 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
                   }
                 />
               </div>
+
+              <div className={styles['settings-page__row']}>
+                <div className={styles['settings-page__copy']}>
+                  <h4>Stay open in background</h4>
+                  <p>Keep the app running after the window closes so device sessions can stay alive</p>
+                </div>
+                <Toggle
+                  checked={settings.general.stayOpenInBackground}
+                  onChange={() =>
+                    onSettingsChange((current) => ({
+                      ...current,
+                      general: {
+                        ...current.general,
+                        stayOpenInBackground: !current.general.stayOpenInBackground,
+                      },
+                    }))
+                  }
+                />
+              </div>
             </div>
 
             <hr className={styles['settings-page__divider']} />

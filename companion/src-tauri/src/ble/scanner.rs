@@ -98,6 +98,7 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
                 name,
                 address: address.clone(),
                 model_id,
+                transport: "ble".to_string(),
                 setup_complete: effective_setup_complete,
                 rssi,
                 signal_strength,

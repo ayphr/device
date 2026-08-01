@@ -50,6 +50,8 @@ pub async fn connect_ble_device(
     Ok(BleConnectionState {
         connected: !status.setup_complete || status.authenticated,
         authenticated: status.authenticated,
+        auth_required: status.auth_required,
+        wifi_required: status.wifi_required,
         setup_complete: status.setup_complete,
         device_name: status.device_name,
     })
@@ -106,6 +108,8 @@ pub async fn authenticate_ble_device(
     Ok(BleConnectionState {
         connected: !status.setup_complete || status.authenticated,
         authenticated: status.authenticated,
+        auth_required: status.auth_required,
+        wifi_required: status.wifi_required,
         setup_complete: status.setup_complete,
         device_name: status.device_name,
     })
@@ -118,6 +122,8 @@ pub async fn submit_ble_setup(
     wifi_ssid: String,
     wifi_password: String,
     device_password: String,
+    auth_required: bool,
+    skip_wifi: bool,
     app: AppHandle,
     store: State<'_, BleDeviceStore>,
 ) -> Result<BleConnectionState, String> {
@@ -133,6 +139,8 @@ pub async fn submit_ble_setup(
         .map_err(|error| log_string_error("setup wifi password encoding failed", error))?;
     append_field(&mut command, &device_password)
         .map_err(|error| log_string_error("setup device password encoding failed", error))?;
+    command.push(if auth_required { 1 } else { 0 });
+    command.push(if skip_wifi { 1 } else { 0 });
 
     debug!("[ble] setup command bytes={}", format_bytes(&command));
 
@@ -162,6 +170,8 @@ pub async fn submit_ble_setup(
     Ok(BleConnectionState {
         connected: !status.setup_complete || status.authenticated,
         authenticated: status.authenticated,
+        auth_required: status.auth_required,
+        wifi_required: status.wifi_required,
         setup_complete: status.setup_complete,
         device_name: status.device_name,
     })

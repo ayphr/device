@@ -1,6 +1,7 @@
 export type AppSettings = {
   general: {
     launchOnLogin: boolean;
+    stayOpenInBackground: boolean;
     systemNotifications: boolean;
     recommendations: boolean;
   };
@@ -17,6 +18,7 @@ const SETTINGS_STORAGE_KEY = 'ayphr-companion-settings-v1';
 export const defaultAppSettings: AppSettings = {
   general: {
     launchOnLogin: true,
+    stayOpenInBackground: false,
     systemNotifications: true,
     recommendations: true,
   },
@@ -45,6 +47,7 @@ export function normalizeAppSettings(value: unknown): AppSettings {
   return {
     general: {
       launchOnLogin: readBoolean(general.launchOnLogin, defaultAppSettings.general.launchOnLogin),
+      stayOpenInBackground: readBoolean(general.stayOpenInBackground, defaultAppSettings.general.stayOpenInBackground),
       systemNotifications: readBoolean(general.systemNotifications, defaultAppSettings.general.systemNotifications),
       recommendations: readBoolean(general.recommendations, defaultAppSettings.general.recommendations),
     },

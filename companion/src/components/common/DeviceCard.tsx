@@ -7,11 +7,13 @@ import {
   IconAntennaBarsOff,
   IconBluetoothConnected,
   IconBluetoothOff,
+  IconUsb,
 } from '@tabler/icons-react';
 import styles from './DeviceCard.module.css';
 
 export interface DeviceCardProps {
   name: string;
+  transport: 'ble' | 'serial';
   onClick?: () => void;
   elevated?: boolean;
   signalStrength: number; // 0 to 5
@@ -23,6 +25,7 @@ export interface DeviceCardProps {
 
 export const DeviceCard = ({
   name,
+  transport,
   onClick,
   elevated = false,
   signalStrength,
@@ -68,6 +71,9 @@ export const DeviceCard = ({
           ) : null}
         </div>
         <div className={styles['device-card__status-icons']} aria-label="Device status">
+          <span className={styles['device-card__status-icon']} title={transport === 'serial' ? 'Serial' : 'Bluetooth'}>
+            {transport === 'serial' ? <IconUsb size={16} /> : <IconBluetoothConnected size={16} />}
+          </span>
           <span className={styles['device-card__status-icon']} title="Wireless signal">
             {signalIcon}
           </span>

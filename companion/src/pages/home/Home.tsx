@@ -32,6 +32,7 @@ export default function Home({ devices, isSearchingForGeoDevices, onOpenDevice }
             <DeviceCard
               key={device.id}
               name={device.name}
+              transport={device.transport}
               subtitle={DEVICE_MODELS[device.modelId]?.name || 'Unknown device'}
               subtitleIcon={getModelIcon(device.modelId)}
               elevated={true}

@@ -8,6 +8,7 @@ import styles from './Setup.module.css';
 interface BleConnectionState {
   connected: boolean;
   authenticated: boolean;
+  authRequired: boolean;
   setupComplete: boolean;
   deviceName: string;
 }
@@ -47,17 +48,26 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
   const [wifiSsid, setWifiSsid] = useState('');
   const [wifiPassword, setWifiPassword] = useState('');
   const [devicePassword, setDevicePassword] = useState('');
+  const [skipWifiSetup, setSkipWifiSetup] = useState(false);
+  const [disableAuthentication, setDisableAuthentication] = useState(false);
   const [agreedToTos, setAgreedToTos] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentStepIndex = stepOrder.indexOf(step);
   const isFirstStep = step === 'intro';
+  let passwordSummary = 'Not set';
+
+  if (disableAuthentication) {
+    passwordSummary = 'Disabled';
+  } else if (devicePassword.length > 0) {
+    passwordSummary = 'Set';
+  }
   const canContinue =
     step === 'intro' ||
     (step === 'name' && deviceName.trim().length > 0) ||
-    (step === 'wifi' && wifiSsid.trim().length > 0 && wifiPassword.trim().length > 0) ||
-    (step === 'password' && devicePassword.trim().length >= 8) ||
+    (step === 'wifi' && (skipWifiSetup || (wifiSsid.trim().length > 0 && wifiPassword.trim().length > 0))) ||
+    (step === 'password' && (disableAuthentication || devicePassword.trim().length >= 8)) ||
     (step === 'terms' && agreedToTos) ||
     step === 'review';
 
@@ -87,12 +97,15 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
     setSubmitError(null);
 
     try {
-      const connection = await invoke<BleConnectionState>('submit_ble_setup', {
+      const command = device.transport === 'serial' ? 'submit_serial_setup' : 'submit_ble_setup';
+      const connection = await invoke<BleConnectionState>(command, {
         deviceId: device.id,
         deviceName: deviceName.trim() || device.name,
         wifiSsid: wifiSsid.trim(),
         wifiPassword,
         devicePassword,
+        authRequired: !disableAuthentication,
+        skipWifi: skipWifiSetup,
       });
 
       onComplete({
@@ -101,6 +114,7 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
         setupComplete: connection.setupComplete,
         connected: connection.connected,
         authenticated: connection.authenticated,
+        authRequired: connection.authRequired,
       });
     } catch (invokeError) {
       console.debug('Setup submission failed', invokeError);
@@ -161,24 +175,39 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
         return (
           <div className={styles['setup-page__section']}>
             <h2>Enter the Wi-Fi network</h2>
-            <p>The device will use these credentials when it joins the local network.</p>
-            <div className={styles['setup-page__form-grid']}>
-              <Input
-                label="Wi-Fi SSID"
-                value={wifiSsid}
-                onChange={(event) => setWifiSsid(event.target.value)}
-                placeholder="Home Network"
-                fullWidth={true}
-              />
-              <Input
-                label="Wi-Fi password"
-                type="password"
-                value={wifiPassword}
-                onChange={(event) => setWifiPassword(event.target.value)}
-                placeholder="Enter network password"
-                fullWidth={true}
-              />
+            <p>The device will use these credentials when it joins the local network. You can skip this for an offline setup and add Wi-Fi later.</p>
+            <div style={{ margin: '1rem 0', padding: '0.9rem 1rem', border: '1px solid var(--color-border-subtle)', borderRadius: '0.9rem', background: 'var(--color-surface-muted)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                <div>
+                  <strong>Skip Wi-Fi setup</strong>
+                  <p style={{ margin: '0.25rem 0 0', color: 'var(--color-text-secondary)' }}>The device will stay offline until you add Wi-Fi later.</p>
+                </div>
+                <Toggle color='green' checked={skipWifiSetup} onChange={() => setSkipWifiSetup((current) => !current)} />
+              </div>
             </div>
+            {!skipWifiSetup ? (
+              <div className={styles['setup-page__form-grid']}>
+                <Input
+                  label="Wi-Fi SSID"
+                  value={wifiSsid}
+                  onChange={(event) => setWifiSsid(event.target.value)}
+                  placeholder="Home Network"
+                  fullWidth={true}
+                />
+                <Input
+                  label="Wi-Fi password"
+                  type="password"
+                  value={wifiPassword}
+                  onChange={(event) => setWifiPassword(event.target.value)}
+                  placeholder="Enter network password"
+                  fullWidth={true}
+                />
+              </div>
+            ) : (
+              <p role="note" style={{ color: 'var(--color-warning)' }}>
+                Warning: skipping Wi-Fi keeps the device offline until you explicitly add a network later.
+              </p>
+            )}
           </div>
         );
 
@@ -186,16 +215,31 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
         return (
           <div className={styles['setup-page__section']}>
             <h2>Create a device password</h2>
-            <p>Use at least 8 characters so the password is easy to remember and hard to guess.</p>
-            <Input
-              label="Device password"
-              type="password"
-              value={devicePassword}
-              onChange={(event) => setDevicePassword(event.target.value)}
-              placeholder="Choose a device password"
-              helperText="A longer password is better for shared spaces."
-              fullWidth={true}
-            />
+            <p>Use at least 8 characters so the password is easy to remember and hard to guess. You can disable authentication for a trusted local-only device, but that weakens security.</p>
+            <div style={{ margin: '1rem 0', padding: '0.9rem 1rem', border: '1px solid var(--color-border-subtle)', borderRadius: '0.9rem', background: 'var(--color-surface-muted)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                <div>
+                  <strong>Disable authentication</strong>
+                  <p style={{ margin: '0.25rem 0 0', color: 'var(--color-text-secondary)' }}>This removes password protection. Only use it on devices that are physically trusted and locally accessible.</p>
+                </div>
+                <Toggle color='green' checked={disableAuthentication} onChange={() => setDisableAuthentication((current) => !current)} />
+              </div>
+            </div>
+            {!disableAuthentication ? (
+              <Input
+                label="Device password"
+                type="password"
+                value={devicePassword}
+                onChange={(event) => setDevicePassword(event.target.value)}
+                placeholder="Choose a device password"
+                helperText="A longer password is better for shared spaces."
+                fullWidth={true}
+              />
+            ) : (
+              <p role="note" style={{ color: 'var(--color-warning)' }}>
+                Warning: authentication is disabled. Anyone with local access can operate this device without a password.
+              </p>
+            )}
           </div>
         );
 
@@ -226,15 +270,23 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
               </div>
               <div>
                 <dt>Wi-Fi SSID</dt>
-                <dd>{wifiSsid}</dd>
+                <dd>{skipWifiSetup ? 'Skipped for now' : wifiSsid}</dd>
               </div>
               <div>
                 <dt>Device password</dt>
-                <dd>{devicePassword.length > 0 ? 'Set' : 'Not set'}</dd>
+                <dd>{passwordSummary}</dd>
               </div>
               <div>
                 <dt>Terms</dt>
                 <dd>{agreedToTos ? 'Accepted' : 'Not accepted'}</dd>
+              </div>
+              <div>
+                <dt>Warnings</dt>
+                <dd>
+                  {disableAuthentication ? 'Authentication is disabled for this device.' : 'Authentication remains enabled.'}
+                  {' '}
+                  {skipWifiSetup ? 'The device will remain offline until Wi-Fi is added later.' : 'Wi-Fi will be configured during setup.'}
+                </dd>
               </div>
             </dl>
           </div>
@@ -306,6 +358,9 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
                 <span>Selected device</span>
               </div>
             </div>
+            <p style={{ marginTop: '1rem', color: 'var(--color-warning)' }}>
+              Security warning: you can disable authentication and skip Wi-Fi during setup. Only do this if you understand the device will be less protected and may remain offline until you configure networking later.
+            </p>
           </CardBody>
 
           <CardFooter>

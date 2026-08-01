@@ -14,6 +14,7 @@ interface AuthPageProps {
 interface BleConnectionState {
   connected: boolean;
   authenticated: boolean;
+  authRequired: boolean;
   setupComplete: boolean;
   deviceName: string;
 }
@@ -44,6 +45,7 @@ export default function AuthPage({ device, onBack, onAuthenticated }: Readonly<A
         setupComplete: connection.setupComplete,
         connected: connection.connected,
         authenticated: connection.authenticated,
+        authRequired: connection.authRequired,
       });
     } catch (invokeError) {
       const message =

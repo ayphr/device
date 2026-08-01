@@ -33,6 +33,7 @@ pub struct BleDeviceSnapshot {
     pub id: String,
     pub name: String,
     pub model_id: String,
+    pub transport: String,
     pub setup_complete: bool,
     pub address: String,
     pub rssi: Option<i16>,
@@ -52,6 +53,8 @@ pub struct BleDeviceSnapshot {
 pub struct BleConnectionState {
     pub connected: bool,
     pub authenticated: bool,
+    pub auth_required: bool,
+    pub wifi_required: bool,
     pub setup_complete: bool,
     pub device_name: String,
 }
@@ -60,6 +63,8 @@ pub struct BleConnectionState {
 pub struct ParsedStatus {
     pub setup_complete: bool,
     pub authenticated: bool,
+    pub auth_required: bool,
+    pub wifi_required: bool,
     pub device_name: String,
 }
 

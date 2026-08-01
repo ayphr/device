@@ -22,34 +22,38 @@ pub async fn query_status(connection: &ActiveBleConnection) -> Result<ParsedStat
 }
 
 pub fn parse_status_response(payload: &[u8]) -> Result<ParsedStatus, String> {
-    if payload.len() < 5 || payload[0] != RESPONSE_STATUS {
+    if payload.len() < 7 || payload[0] != RESPONSE_STATUS {
         warn!("[ble] invalid status payload={}", format_bytes(payload));
         return Err("Invalid status response payload".to_string());
     }
 
     let setup_complete = payload[1] == 1;
     let authenticated = payload[2] == 1;
-    let name_length = payload[4] as usize;
+    let auth_required = payload[3] == 1;
+    let wifi_required = payload[4] == 1;
+    let name_length = payload[6] as usize;
 
-    if payload.len() < 5 + name_length {
+    if payload.len() < 7 + name_length {
         warn!("[ble] status response missing device name bytes");
         return Err("Status response is missing device name bytes".to_string());
     }
 
-    let device_name = String::from_utf8(payload[5..5 + name_length].to_vec())
+    let device_name = String::from_utf8(payload[7..7 + name_length].to_vec())
         .map_err(|error| {
             warn!("[ble] device name decode failed: {}", error);
             "Device name is not valid UTF-8".to_string()
         })?;
 
     debug!(
-        "[ble] parsed status setup_complete={} authenticated={} device_name={}",
-        setup_complete, authenticated, device_name
+        "[ble] parsed status setup_complete={} authenticated={} auth_required={} wifi_required={} device_name={}",
+        setup_complete, authenticated, auth_required, wifi_required, device_name
     );
 
     Ok(ParsedStatus {
         setup_complete,
         authenticated,
+        auth_required,
+        wifi_required,
         device_name,
     })
 }

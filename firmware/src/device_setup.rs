@@ -11,13 +11,29 @@ use std::sync::{Arc, Mutex};
 
 pub const DEFAULT_DEVICE_NAME: &str = "Unconfigured Geo";
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct DeviceSetupData {
     pub device_name: String,
     pub wifi_ssid: String,
     pub wifi_password: String,
     pub device_password: String,
+    pub auth_required: bool,
+    pub wifi_required: bool,
     pub configured: bool,
+}
+
+impl Default for DeviceSetupData {
+    fn default() -> Self {
+        Self {
+            device_name: String::default(),
+            wifi_ssid: String::default(),
+            wifi_password: String::default(),
+            device_password: String::default(),
+            auth_required: true,
+            wifi_required: true,
+            configured: false,
+        }
+    }
 }
 
 pub struct DeviceSetup {
@@ -89,8 +105,12 @@ impl DeviceSetup {
             .unwrap_or_default()
             .to_string();
 
+        state.data.auth_required = self.nvs.get_u8("auth_required").unwrap_or(Some(1)) == Some(1);
+        state.data.wifi_required = self.nvs.get_u8("wifi_required").unwrap_or(Some(1)) == Some(1);
+
         if state.data.configured
-            && (state.data.wifi_ssid.is_empty() || state.data.device_password.is_empty())
+            && ((state.data.wifi_required && state.data.wifi_ssid.is_empty())
+                || (state.data.auth_required && state.data.device_password.is_empty()))
         {
             warn!("Incomplete stored configuration; falling back to unconfigured");
             state.data.configured = false;
@@ -111,6 +131,8 @@ impl DeviceSetup {
         nvs.set_str("wifi_ssid", &data.wifi_ssid)?;
         nvs.set_str("wifi_pass", &data.wifi_password)?;
         nvs.set_str("dev_pass", &data.device_password)?;
+        nvs.set_u8("auth_required", if data.auth_required { 1 } else { 0 })?;
+        nvs.set_u8("wifi_required", if data.wifi_required { 1 } else { 0 })?;
         info!("Setup persisted to NVS");
         Ok(())
     }
@@ -131,6 +153,14 @@ impl DeviceSetup {
     }
 
     pub fn process_request(&self, data: &[u8]) -> Vec<u8> {
+        self.process_request_for_transport(data, false)
+    }
+
+    pub fn process_serial_request(&self, data: &[u8]) -> Vec<u8> {
+        self.process_request_for_transport(data, true)
+    }
+
+    fn process_request_for_transport(&self, data: &[u8], bypass_auth: bool) -> Vec<u8> {
         if data.is_empty() {
             return vec![RESPONSE_ERROR];
         }
@@ -146,20 +176,44 @@ impl DeviceSetup {
                 let mut resp = vec![
                     RESPONSE_STATUS,
                     if state.data.configured { 1 } else { 0 },
-                    if !state.data.configured || state.authenticated { 1 } else { 0 },
-                    if !state.data.wifi_ssid.is_empty() { 1 } else { 0 },
+                    if !state.data.configured
+                        || bypass_auth
+                        || !state.data.auth_required
+                        || state.authenticated
+                    {
+                        1
+                    } else {
+                        0
+                    },
+                    if state.data.auth_required { 1 } else { 0 },
+                    if state.data.wifi_required { 1 } else { 0 },
+                    if !state.data.wifi_ssid.is_empty() {
+                        1
+                    } else {
+                        0
+                    },
                     name_len,
                 ];
                 resp.extend_from_slice(&name_bytes[..name_len as usize]);
                 resp
             }
             COMMAND_AUTHENTICATE => {
+                if bypass_auth {
+                    state.authenticated = false;
+                    return vec![RESPONSE_AUTH_OK];
+                }
+
                 let pass = match Self::read_field(data, &mut cursor) {
                     Some(p) => p,
                     None => return vec![RESPONSE_ERROR],
                 };
 
                 if !state.data.configured {
+                    state.authenticated = true;
+                    return vec![RESPONSE_AUTH_OK];
+                }
+
+                if !state.data.auth_required {
                     state.authenticated = true;
                     return vec![RESPONSE_AUTH_OK];
                 }
@@ -174,29 +228,46 @@ impl DeviceSetup {
                 }]
             }
             COMMAND_APPLY_SETUP => {
-                if state.data.configured && !state.authenticated {
+                if !bypass_auth && state.data.configured && !state.authenticated {
                     return vec![RESPONSE_AUTH_FAILED];
                 }
 
                 let dev_name = Self::read_field(data, &mut cursor).unwrap_or_default();
                 let wifi_ssid = match Self::read_field(data, &mut cursor) {
-                    Some(s) if !s.is_empty() => s,
-                    _ => return vec![RESPONSE_SETUP_FAILED],
+                    Some(s) => s,
+                    None => return vec![RESPONSE_SETUP_FAILED],
                 };
                 let wifi_pass = Self::read_field(data, &mut cursor).unwrap_or_default();
-                let dev_pass = match Self::read_field(data, &mut cursor) {
-                    Some(p) if !p.is_empty() => p,
-                    _ => return vec![RESPONSE_SETUP_FAILED],
-                };
+                let dev_pass = Self::read_field(data, &mut cursor).unwrap_or_default();
+                let auth_required = data
+                    .get(cursor)
+                    .copied()
+                    .map(|value| value != 0)
+                    .unwrap_or(true);
+                let skip_wifi = data
+                    .get(cursor + 1)
+                    .copied()
+                    .map(|value| value != 0)
+                    .unwrap_or(false);
+
+                if auth_required && dev_pass.is_empty() {
+                    return vec![RESPONSE_SETUP_FAILED];
+                }
+
+                if !skip_wifi && wifi_ssid.is_empty() {
+                    return vec![RESPONSE_SETUP_FAILED];
+                }
 
                 state.data.wifi_ssid = wifi_ssid;
                 state.data.wifi_password = wifi_pass;
                 state.data.device_password = dev_pass;
+                state.data.auth_required = auth_required;
+                state.data.wifi_required = !skip_wifi;
                 if !dev_name.is_empty() {
                     state.data.device_name = dev_name;
                 }
                 state.data.configured = true;
-                state.authenticated = true;
+                state.authenticated = !bypass_auth;
 
                 if Self::save_to_nvs_internal(&self.nvs, &state.data).is_ok() {
                     vec![RESPONSE_SETUP_OK]
@@ -205,7 +276,7 @@ impl DeviceSetup {
                 }
             }
             COMMAND_RESTART => {
-                if state.data.configured && !state.authenticated {
+                if !bypass_auth && state.data.configured && !state.authenticated {
                     return vec![RESPONSE_AUTH_FAILED];
                 }
                 info!("Executing restart via BLE command");
@@ -216,7 +287,7 @@ impl DeviceSetup {
                 vec![RESPONSE_RESTART_OK]
             }
             COMMAND_FACTORY_RESET => {
-                if state.data.configured && !state.authenticated {
+                if !bypass_auth && state.data.configured && !state.authenticated {
                     return vec![RESPONSE_AUTH_FAILED];
                 }
 
@@ -231,7 +302,7 @@ impl DeviceSetup {
                 }
             }
             COMMAND_CHANGE_PASSWORD => {
-                if state.data.configured && !state.authenticated {
+                if !bypass_auth && state.data.configured && !state.authenticated {
                     return vec![RESPONSE_AUTH_FAILED];
                 }
 
@@ -244,11 +315,16 @@ impl DeviceSetup {
                     _ => return vec![RESPONSE_ERROR],
                 };
 
-                if state.data.configured && current_pass != state.data.device_password {
+                if !bypass_auth
+                    && state.data.configured
+                    && state.data.auth_required
+                    && current_pass != state.data.device_password
+                {
                     return vec![RESPONSE_AUTH_FAILED];
                 }
 
                 state.data.device_password = new_pass;
+                state.data.auth_required = true;
                 if Self::save_to_nvs_internal(&self.nvs, &state.data).is_ok() {
                     vec![RESPONSE_CHANGE_PASSWORD_OK]
                 } else {
@@ -256,7 +332,7 @@ impl DeviceSetup {
                 }
             }
             COMMAND_UPDATE_WIFI => {
-                if state.data.configured && !state.authenticated {
+                if !bypass_auth && state.data.configured && !state.authenticated {
                     return vec![RESPONSE_AUTH_FAILED];
                 }
 
@@ -268,6 +344,7 @@ impl DeviceSetup {
 
                 state.data.wifi_ssid = wifi_ssid;
                 state.data.wifi_password = wifi_pass;
+                state.data.wifi_required = true;
 
                 if Self::save_to_nvs_internal(&self.nvs, &state.data).is_ok() {
                     vec![RESPONSE_UPDATE_WIFI_OK]

@@ -9,7 +9,9 @@ export interface DeviceInfo {
   id: string;
   name: string;
   modelId: DeviceModelId;
+  transport: 'ble' | 'serial';
   setupComplete: boolean;
+  authRequired?: boolean;
   address: string;
   rssi: number | null;
   signalStrength: number;

@@ -1,37 +1,43 @@
-use alloc::string::String;
 use crate::constants::RESPONSE_STATUS;
+use alloc::string::String;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DeviceStatusResponse {
     pub is_configured: bool,
     pub is_authenticated: bool,
+    pub auth_required: bool,
+    pub wifi_required: bool,
     pub has_wifi: bool,
     pub device_name: String,
 }
 
 impl DeviceStatusResponse {
     pub fn parse(payload: &[u8]) -> Result<Self, &'static str> {
-        if payload.len() < 5 || payload[0] != RESPONSE_STATUS {
+        if payload.len() < 6 || payload[0] != RESPONSE_STATUS {
             return Err("Invalid status payload or opcode");
         }
 
         let is_configured = payload[1] == 1;
         let is_authenticated = payload[2] == 1;
-        let has_wifi = payload[3] == 1;
-        let name_len = payload[4] as usize;
+        let auth_required = payload[3] == 1;
+        let wifi_required = payload[4] == 1;
+        let has_wifi = payload[5] == 1;
+        let name_len = payload[6] as usize;
 
-        if payload.len() < 5 + name_len {
+        if payload.len() < 7 + name_len {
             return Err("Status payload truncated before reading device name");
         }
 
-        let device_name = core::str::from_utf8(&payload[5..5 + name_len])
+        let device_name = core::str::from_utf8(&payload[7..7 + name_len])
             .map_err(|_| "Device name contains invalid UTF-8")?
             .into();
 
         Ok(Self {
             is_configured,
             is_authenticated,
+            auth_required,
+            wifi_required,
             has_wifi,
             device_name,
         })
