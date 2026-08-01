@@ -219,7 +219,6 @@
   .app-topbar__left,
   .app-topbar__right {
     width: auto;
-    gap: 0.6rem;
   }
 
   .app-tabs {
