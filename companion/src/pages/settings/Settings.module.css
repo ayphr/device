@@ -141,12 +141,43 @@
     border-right: 0;
     border-bottom: 1px solid var(--border-subtle);
     overflow-x: scroll;
-    overflow-y: hidden
+    overflow-y: hidden;
   }
 
   .settings-page__nav {
     flex-direction: row;
     overflow-x: auto;
+  }
+
+  /* Subtle, stable horizontal scrollbar for small screens */
+  .settings-page__nav {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 100, 100, 0.35) transparent;
+  }
+
+  .settings-page__sidebar::-webkit-scrollbar,
+  .settings-page__nav::-webkit-scrollbar {
+    height: 10px;
+    background: transparent;
+  }
+
+  .settings-page__sidebar::-webkit-scrollbar-track,
+  .settings-page__nav::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .settings-page__sidebar::-webkit-scrollbar-thumb,
+  .settings-page__nav::-webkit-scrollbar-thumb {
+    background-color: rgba(100, 100, 100, 0.35);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    min-height: 24px;
+  }
+
+  .settings-page__sidebar::-webkit-scrollbar-thumb:hover,
+  .settings-page__nav::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(100, 100, 100, 0.5);
   }
 
   .settings-page__item {
