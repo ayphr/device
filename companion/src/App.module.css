@@ -28,7 +28,7 @@
   align-items: center;
   flex-wrap: nowrap;
   min-width: 0;
-  gap: 1rem;
+  gap: 0.5rem;
 }
 
 .brand-mark {
