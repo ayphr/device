@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   IconActivity,
   IconAccessible,
@@ -26,11 +26,30 @@ type SettingsPageProps = {
 
 export default function SettingsPage({ settings, onSettingsChange, onCheckForUpdates, isCheckingForUpdate }: Readonly<SettingsPageProps>) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
+  const navRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+
+    const shouldHandle = () => window.matchMedia('(max-width: 820px)').matches;
+
+    const onWheel = (e: WheelEvent) => {
+      if (!shouldHandle()) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      if (e.deltaY === 0) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel as EventListener);
+  }, []);
 
   return (
     <section className={styles['settings-page']} aria-label="Settings">
       <aside className={styles['settings-page__sidebar']}>
-        <nav className={styles['settings-page__nav']} aria-label="Settings sections">
+        <nav ref={navRef} className={styles['settings-page__nav']} aria-label="Settings sections">
           <button
             className={`${styles['settings-page__item']} ${activeSection === 'general' ? styles['settings-page__item--active'] : ''}`.trim()}
             type="button"
