@@ -191,6 +191,20 @@ function App() {
     };
   }, [settings.general.launchOnLogin]);
 
+  useEffect(() => {
+    const syncBackgroundMode = async () => {
+      try {
+        await invoke('set_background_mode', {
+          enabled: settings.general.stayOpenInBackground,
+        });
+      } catch (error) {
+        console.error('Failed to sync background mode', error);
+      }
+    };
+
+    void syncBackgroundMode();
+  }, [settings.general.stayOpenInBackground]);
+
   const shellStyle = {
     '--tab-indicator-left': `${tabIndicator.left}px`,
     '--tab-indicator-width': `${tabIndicator.width}px`,
