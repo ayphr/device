@@ -37,10 +37,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
-            if window.label() == "main" {
+            if cfg!(target_os = "macos") && window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if let Err(e) = window.hide() {
+                        error!("failed to hide main window on close: {e}");
+                    }
                 }
             }
         })
