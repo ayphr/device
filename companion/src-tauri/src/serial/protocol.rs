@@ -1,12 +1,9 @@
-use std::io::{Read, Write};
-
 use serialport::SerialPort;
 use tracing::{debug, warn};
 
 use ayphr_protocol::{COMMAND_GET_STATUS, RESPONSE_STATUS};
 
 use super::constants::COMMAND_TIMEOUT;
-use super::state::SerialDeviceSnapshot;
 use crate::ble::state::ParsedStatus;
 
 pub fn query_status(port_name: &str) -> Result<ParsedStatus, String> {

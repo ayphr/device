@@ -1,1 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2000" viewBox="0 0 1500 1500" height="2000" version="1.0"><defs><clipPath id="b"><path d="M.473.473h1089.086v1089.086H.473Zm0 0"/></clipPath><clipPath id="a"><path d="M0 0h1090v1090H0z"/></clipPath></defs><g clip-path="url(#a)" transform="translate(205 205)"><g clip-path="url(#b)"><path fill="#fff" d="M272.734.473v272.261H.473V.473Zm544.528 544.523V272.734H544.996v272.262ZM544.996.473H272.734l272.262 272.261ZM272.734 272.734v272.262l272.262-272.262ZM817.262.473v272.261L1089.523.473Zm272.261 544.523V272.734H817.262Zm-1089.05 0v272.266h272.261V544.996Zm544.523 544.527h272.266V817.262H544.996ZM272.734 544.996l272.262 272.266V544.996Zm0 544.527 272.262-272.261H272.734Zm544.528-272.261 272.261-272.266H817.262Zm272.261 0H817.262l272.261 272.261Zm0 0"/></g></g></svg>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 1400 1400" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <g transform="matrix(4,0,0,4,0,-4200)">
+        <path d="M262.5,1312.5L350,1312.5L262.5,1400L262.5,1312.5ZM175,1400L0,1400L350,1050L350,1225L262.5,1312.5L262.5,1225L175,1312.5L262.5,1312.5L175,1400Z"/>
+    </g>
+    <path d="M0,350L350,0L350,4L700,4L700,354L696,354L350,700L0,700L0,350Z"/>
+</svg>
