@@ -19,6 +19,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import styles from './App.module.css';
+import shaderLogo from './assets/shader-logo.svg';
 import logo from './assets/logo.svg';
 
 interface BleConnectionState {
@@ -379,7 +380,7 @@ function App() {
           <span className={styles['brand-mark']}>
             {settings.accessibility.logoAnimation ? (
               <LiquidChromeLogo
-                svg={logo}
+                svg={shaderLogo}
                 size={100}
                 speed={0.25}
                 noiseIntensity={0}
