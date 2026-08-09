@@ -12,10 +12,9 @@ use serial::{
     update_serial_device_wifi, SerialDeviceStore,
 };
 use tauri::menu::{MenuBuilder, MenuItem};
-use tauri::WindowEvent;
-use tauri::Manager;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::MacosLauncher;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber;
 
 fn show_main_window(app: &tauri::AppHandle) {
@@ -23,6 +22,75 @@ fn show_main_window(app: &tauri::AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+fn ensure_tray_icon(app: &AppHandle) -> tauri::Result<()> {
+    if app.tray_by_id("main").is_some() {
+        return Ok(());
+    }
+
+    let tray_menu = MenuBuilder::new(app)
+        .item(&MenuItem::with_id(
+            app,
+            "show",
+            "Show Ayphr Companion",
+            true,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            "hide",
+            "Hide Ayphr Companion",
+            true,
+            None::<&str>,
+        )?)
+        .separator()
+        .item(&MenuItem::with_id(
+            app,
+            "quit",
+            "Quit Ayphr Companion",
+            true,
+            None::<&str>,
+        )?)
+        .build()?;
+
+    if let Some(icon) = app.default_window_icon().cloned() {
+        let _tray = tauri::tray::TrayIconBuilder::with_id("main")
+            .menu(&tray_menu)
+            .icon(icon)
+            .on_menu_event(|app, event| match event.id().as_ref() {
+                "show" => show_main_window(app),
+                "hide" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                }
+                "quit" => app.exit(0),
+                _ => {}
+            })
+            .build(app)?;
+    } else {
+        warn!("skipping tray icon setup because no default window icon is available");
+    }
+
+    Ok(())
+}
+
+fn set_tray_icon_visibility(app: &AppHandle, visible: bool) -> tauri::Result<()> {
+    if visible {
+        ensure_tray_icon(app)?;
+    }
+
+    if let Some(tray) = app.tray_by_id("main") {
+        tray.set_visible(visible)?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn set_background_mode(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    set_tray_icon_visibility(&app, enabled).map_err(|error| error.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -36,46 +104,13 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(MacosLauncher::default(), None))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .on_window_event(|window, event| {
-            if cfg!(target_os = "macos") && window.label() == "main" {
-                if let WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    if let Err(e) = window.hide() {
-                        error!("failed to hide main window on close: {e}");
-                    }
-                }
-            }
-        })
         .setup(|app| {
             let app_handle = app.handle().clone();
             let device_store = BleDeviceStore::default();
             let serial_store = SerialDeviceStore::default();
-            let tray_menu = MenuBuilder::new(app)
-                .item(&MenuItem::with_id(app, "show", "Show Ayphr Companion", true, None::<&str>)?)
-                .item(&MenuItem::with_id(app, "hide", "Hide Ayphr Companion", true, None::<&str>)?)
-                .separator()
-                .item(&MenuItem::with_id(app, "quit", "Quit Ayphr Companion", true, None::<&str>)?)
-                .build()?;
 
             app.manage(device_store.clone());
             app.manage(serial_store.clone());
-
-            if let Some(icon) = app.default_window_icon().cloned() {
-                let _tray = tauri::tray::TrayIconBuilder::with_id("main")
-                    .menu(&tray_menu)
-                    .icon(icon)
-                    .on_menu_event(|app, event| match event.id().as_ref() {
-                        "show" => show_main_window(app),
-                        "hide" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.hide();
-                            }
-                        }
-                        "quit" => app.exit(0),
-                        _ => {}
-                    })
-                    .build(app)?;
-            }
 
             tauri::async_runtime::spawn(async move {
                 if let Err(error) = scan_ble_devices(app_handle, device_store).await {
@@ -108,7 +143,8 @@ pub fn run() {
             restart_serial_device,
             factory_reset_serial_device,
             change_serial_device_password,
-            update_serial_device_wifi
+            update_serial_device_wifi,
+            set_background_mode
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
