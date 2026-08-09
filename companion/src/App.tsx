@@ -19,7 +19,6 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import styles from './App.module.css';
-import shaderLogo from './assets/shader-logo.svg';
 import logo from './assets/logo.svg';
 
 interface BleConnectionState {
@@ -380,7 +379,7 @@ function App() {
           <span className={styles['brand-mark']}>
             {settings.accessibility.logoAnimation ? (
               <LiquidChromeLogo
-                svg={shaderLogo}
+                svg={logo}
                 size={100}
                 speed={0.25}
                 noiseIntensity={0}
@@ -493,7 +492,7 @@ function App() {
       >
         <div className={styles['update-modal__content']}>
           <p className={styles['update-modal__copy']}>
-            A newer version of Ayphr Companion is ready for your platform.
+            A newer version of Ayphr Companion is available for your platform.
           </p>
 
           <div className={styles['update-modal__versions']}>
@@ -521,7 +520,7 @@ function App() {
               Later
             </Button>
             <Button onClick={installUpdate} isLoading={isInstallingUpdate}>
-              Upgrade now
+              Update now
             </Button>
           </div>
         </div>
