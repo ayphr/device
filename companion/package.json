@@ -8,6 +8,7 @@
     "build": "tsc && npm run lint && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "liquid-icon": "npx tauri-liquid-icon --icon ./src-tauri/companion.icon --output ./src-tauri/resources",
     "lint": "eslint . --max-warnings 0",
     "lint-fix": "eslint . --fix"
   },
@@ -35,6 +36,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "tauri-liquid-icon": "^1.1.0",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.59.3",
     "vite": "^8.0.0",

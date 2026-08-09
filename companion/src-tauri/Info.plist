@@ -4,5 +4,7 @@
   <dict>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>Ayphr Companion uses Bluetooth to connect to and manage Ayphr devices.</string>
+    <key>CFBundleIconName</key>
+    <string>companion</string>
   </dict>
 </plist>
