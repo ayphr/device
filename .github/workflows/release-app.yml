@@ -23,6 +23,8 @@ jobs:
               libappindicator3-dev
               librsvg2-dev
               patchelf
+              pkg-config
+              libudev-dev
           - platform: macos-latest
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
