@@ -78,6 +78,28 @@ jobs:
         run: cargo build --release --target xtensa-esp32-espidf
         working-directory: ./firmware
 
+      - name: Generate version.json
+        if: startsWith(github.ref, 'refs/tags/firmware-v')
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${RELEASE_TAG#firmware-v}"
+          BINARY_NAME="ayphr-firmware"
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/${BINARY_NAME}.bin"
+          SHA256=$(sha256sum "firmware/target/xtensa-esp32-espidf/release/${BINARY_NAME}.bin" | cut -d' ' -f1)
+
+          cat > version.json <<EOF
+          {
+            "version": "${VERSION}",
+            "binaryUrl": "${DOWNLOAD_URL}",
+            "sha256": "${SHA256}"
+          }
+          EOF
+
+          echo "Generated version.json:"
+          cat version.json
+
       - name: Upload Artifacts to Release
         if: startsWith(github.ref, 'refs/tags/firmware-v')
         uses: softprops/action-gh-release@v2
@@ -86,5 +108,6 @@ jobs:
             firmware/target/xtensa-esp32-espidf/release/*.bin
             firmware/target/xtensa-esp32-espidf/release/ayphr-firmware
             firmware/target/xtensa-esp32-espidf/release/ayphr-firmware.d
+            version.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

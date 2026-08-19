@@ -1,26 +1,22 @@
 import {
-  IconAdjustmentsHorizontal,
   IconArrowLeft,
   IconAntennaBars3,
-  IconClock,
-  IconDatabase,
-  IconGauge,
-  IconSettings,
-  IconWifiOff,
-  IconRefresh,
-  IconTrash,
+  IconCloudDownload,
+  IconDeviceDesktop,
+  IconInfoCircle,
   IconLock,
+  IconRefresh,
+  IconSettings,
+  IconTrash,
+  IconUpload,
   IconWifi,
-  IconAntennaBarsOff,
-  IconAntennaBars1,
-  IconAntennaBars2,
-  IconAntennaBars4,
-  IconAntennaBars5,
+  IconWifiOff,
 } from '@tabler/icons-react';
-import { useState, type ComponentType } from 'react';
+import { useState, useEffect, type ComponentType } from 'react';
 import { formatLastSeen, formatRssi, rssiLabel, signalStrengthLabel, type DeviceInfo } from '../../lib/devices';
 import { Button, ConfirmDialog, Modal, Input } from '../../components/common';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import styles from './Device.module.css';
 
 interface DevicePageProps {
@@ -28,17 +24,28 @@ interface DevicePageProps {
   readonly onBack: () => void;
 }
 
-type DeviceSection = 'dashboard' | 'controls' | 'data' | 'settings';
+type DeviceSection = 'general' | 'updates' | 'info';
 
 const sections: Array<{ id: DeviceSection; label: string; icon: ComponentType<{ size?: number }> }> = [
-  { id: 'dashboard', label: 'Dashboard', icon: IconGauge },
-  { id: 'controls', label: 'Controls', icon: IconAdjustmentsHorizontal },
-  { id: 'data', label: 'Data', icon: IconDatabase },
-  { id: 'settings', label: 'Settings', icon: IconSettings },
+  { id: 'general', label: 'General', icon: IconSettings },
+  { id: 'updates', label: 'Updates', icon: IconCloudDownload },
+  { id: 'info', label: 'Info', icon: IconInfoCircle },
 ];
 
+interface FirmwareInfoResult {
+  version: string;
+  hardwareRev: string;
+  uptimeSecs: number;
+}
+
+interface FirmwareUpdateProgress {
+  step: string;
+  progress: number;
+  message: string;
+}
+
 export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>) {
-  const [activeSection, setActiveSection] = useState<DeviceSection>('dashboard');
+  const [activeSection, setActiveSection] = useState<DeviceSection>('general');
   const [isRestarting, setIsRestarting] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [isResetting, setIsResetResetting] = useState(false);
@@ -54,35 +61,60 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
   const [wifiPassword, setWifiPassword] = useState('');
   const [wifiError, setWifiError] = useState<string | null>(null);
 
-  const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label ?? 'Dashboard';
+  const [firmwareInfo, setFirmwareInfo] = useState<FirmwareInfoResult | null>(null);
+  const [firmwareError, setFirmwareError] = useState<string | null>(null);
+  const [isUpdatingFirmware, setIsUpdatingFirmware] = useState(false);
+  const [firmwareProgress, setFirmwareProgress] = useState<FirmwareUpdateProgress | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; body?: string } | null>(null);
+  const [isCheckingFirmwareUpdate, setIsCheckingFirmwareUpdate] = useState(false);
 
-  const signalIcon = (signalStrength: number | null) => {
-    if (signalStrength === null) {
-      return <IconAntennaBarsOff size={16} style={{ opacity: 0.3 }} />;
-    }
+  const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label ?? 'General';
 
-    if (signalStrength >= 5) {
-      return <IconAntennaBars5 size={16} />;
-    }
+  useEffect(() => {
+    let cancelled = false;
 
-    if (signalStrength === 4) {
-      return <IconAntennaBars4 size={16} />;
-    }
+    const loadFirmwareInfo = async () => {
+      try {
+        const command = device.transport === 'serial' ? 'get_firmware_info_serial' : 'get_firmware_info_ble';
+        const info = await invoke<FirmwareInfoResult>(command, { deviceId: device.id });
+        if (!cancelled) {
+          setFirmwareInfo(info);
+          setFirmwareError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setFirmwareInfo(null);
+          setFirmwareError(typeof error === 'string' ? error : 'Failed to query firmware info');
+        }
+      }
+    };
 
-    if (signalStrength === 3) {
-      return <IconAntennaBars3 size={16} />;
-    }
+    void loadFirmwareInfo();
 
-    if (signalStrength === 2) {
-      return <IconAntennaBars2 size={16} />;
-    }
+    return () => {
+      cancelled = true;
+    };
+  }, [device.id, device.transport]);
 
-    if (signalStrength === 1) {
-      return <IconAntennaBars1 size={16} />;
-    }
+  useEffect(() => {
+    let unlistenProgress: (() => void) | undefined;
 
-    return <IconAntennaBarsOff size={16} style={{ opacity: 0.3 }} />;
-  };
+    const setup = async () => {
+      unlistenProgress = await listen<FirmwareUpdateProgress>('firmware-update-progress', (event) => {
+        setFirmwareProgress(event.payload);
+
+        if (event.payload.step === 'complete' || event.payload.step === 'error') {
+          setIsUpdatingFirmware(false);
+        }
+      });
+    };
+
+    void setup();
+
+    return () => {
+      unlistenProgress?.();
+    };
+  }, []);
 
   const handleRestart = async () => {
     setIsRestarting(true);
@@ -113,9 +145,7 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
   };
 
   const handleChangePassword = async () => {
-    if (device.authRequired === false) {
-      return;
-    }
+    if (device.authRequired === false) return;
 
     if (newPassword.length < 8) {
       setPasswordError('New password must be at least 8 characters');
@@ -162,55 +192,71 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
     }
   };
 
-  const dashboardSection = (
-    <div className={styles['device-page__stacked-grid']}>
-      <div className={styles['device-page__hero']}>
-        <div className={styles['device-page__metrics']}>
-          <article className={styles['device-page__metric-card']}>
-            <span className={styles['device-page__metric-label']}>
-              <IconWifiOff size={14} />
-              RSSI
-            </span>
-            <strong>{formatRssi(device.rssi)}</strong>
-          </article>
+  const handleCheckFirmwareUpdate = async () => {
+    setIsCheckingFirmwareUpdate(true);
+    setFirmwareError(null);
+    try {
+      const response = await fetch('https://api.github.com/repos/ayphr/device/releases/latest', {
+        headers: { Accept: 'application/vnd.github.v3+json' },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch latest release');
+      }
+      const release = await response.json();
+      const firmwareAsset = release.assets?.find((a: { name: string }) => a.name.endsWith('.bin'));
+      if (firmwareAsset) {
+        setUpdateAvailable({
+          version: release.tag_name?.replace('firmware-v', '') ?? release.tag_name,
+          body: release.body ?? undefined,
+        });
+      } else {
+        setUpdateAvailable(null);
+      }
+    } catch (error) {
+      setUpdateAvailable(null);
+      setFirmwareError(typeof error === 'string' ? error : 'Failed to check for updates');
+    } finally {
+      setIsCheckingFirmwareUpdate(false);
+    }
+  };
 
-          <article className={styles['device-page__metric-card']}>
-            <span className={styles['device-page__metric-label']}>
-              <IconClock size={14} />
-              Last seen
-            </span>
-            <strong>{formatLastSeen(device.lastSeenSecondsAgo)}</strong>
-          </article>
+  const handleInstallFirmwareUpdate = async () => {
+    if (!updateAvailable) return;
+    setIsUpdatingFirmware(true);
+    setFirmwareProgress(null);
+    setFirmwareError(null);
+    try {
+      const response = await fetch('https://api.github.com/repos/ayphr/device/releases/latest', {
+        headers: { Accept: 'application/vnd.github.v3+json' },
+      });
+      if (!response.ok) throw new Error('Failed to fetch release');
+      const release = await response.json();
+      const asset = release.assets?.find((a: { name: string }) => a.name.endsWith('.bin'));
+      if (!asset) throw new Error('Firmware binary not found in release');
 
-          <article className={styles['device-page__metric-card']}>
-            <span className={styles['device-page__metric-label']}>
-              {signalIcon(device.signalStrength)}
-              Signal
-            </span>
-            <strong>{signalStrengthLabel(device.signalStrength)}</strong>
-          </article>
-        </div>
-      </div>
-    </div>
-  );
+      const command = device.transport === 'serial' ? 'download_and_update_firmware_serial' : 'download_and_update_firmware_ble';
+      await invoke(command, {
+        deviceId: device.id,
+        downloadUrl: asset.browser_download_url,
+      });
 
-  const controlsSection = (
+      setUpdateAvailable(null);
+    } catch (error) {
+      setFirmwareProgress({ step: 'error', progress: 0, message: typeof error === 'string' ? error : 'Update failed' });
+      setIsUpdatingFirmware(false);
+    }
+  };
+
+  const generalSection = (
     <div className={styles['device-page__stacked-grid']}>
       <article className={styles['device-page__panel']}>
         <h2>System Controls</h2>
         <div className={styles['device-page__control-list']}>
-          <Button
-            variant="secondary"
-            onClick={handleRestart}
-            isLoading={isRestarting}
-          >
+          <Button variant="secondary" onClick={handleRestart} isLoading={isRestarting}>
             <IconRefresh size={16} />
             Restart device
           </Button>
-          <Button
-            variant="secondary"
-            onClick={() => setIsWifiModalOpen(true)}
-          >
+          <Button variant="secondary" onClick={() => setIsWifiModalOpen(true)}>
             <IconWifi size={16} />
             Update Wi-Fi
           </Button>
@@ -219,18 +265,12 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
               Authentication is disabled for this device, so password controls are hidden.
             </p>
           ) : (
-            <Button
-              variant="secondary"
-              onClick={() => setIsPasswordModalOpen(true)}
-            >
+            <Button variant="secondary" onClick={() => setIsPasswordModalOpen(true)}>
               <IconLock size={16} />
               Change password
             </Button>
           )}
-          <Button
-            variant="danger"
-            onClick={() => setIsResetDialogOpen(true)}
-          >
+          <Button variant="danger" onClick={() => setIsResetDialogOpen(true)}>
             <IconTrash size={16} />
             Factory reset
           </Button>
@@ -308,11 +348,134 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
     </div>
   );
 
-  const dataSection = (
+  const updatesSection = (
     <div className={styles['device-page__stacked-grid']}>
       <article className={styles['device-page__panel']}>
-        <h2>Data</h2>
+        <h2>Firmware</h2>
+        <div className={styles['device-page__setting-list']}>
+          <div className={styles['device-page__setting-row']}>
+            <div>
+              <h3>Current version</h3>
+              <p>{firmwareInfo ? `v${firmwareInfo.version}` : firmwareError ?? 'Unknown'}</p>
+            </div>
+            {firmwareInfo && (
+              <span className={styles['device-page__setting-value']}>{firmwareInfo.version}</span>
+            )}
+          </div>
+
+          <div className={styles['device-page__setting-row']} style={{ marginTop: '0.6rem' }}>
+            <div>
+              <h3>Check for updates</h3>
+              <p>Check if a newer firmware version is available</p>
+            </div>
+            <div>
+              <Button variant="secondary" onClick={handleCheckFirmwareUpdate} disabled={isCheckingFirmwareUpdate || isUpdatingFirmware}>
+                {isCheckingFirmwareUpdate ? 'Checking...' : 'Check for updates'}
+              </Button>
+            </div>
+          </div>
+
+          {updateAvailable && !isUpdatingFirmware && (
+            <div className={styles['device-page__update-banner']}>
+              <div className={styles['device-page__update-info']}>
+                <strong>Firmware update available</strong>
+                <span>Version {updateAvailable.version} is ready to install</span>
+                {updateAvailable.body && (
+                  <p className={styles['device-page__update-notes']}>{updateAvailable.body}</p>
+                )}
+              </div>
+              <Button onClick={handleInstallFirmwareUpdate} isLoading={isUpdatingFirmware}>
+                <IconUpload size={16} />
+                Update now
+              </Button>
+            </div>
+          )}
+
+          {isUpdatingFirmware && firmwareProgress && (
+            <div className={styles['device-page__update-progress']}>
+              <div className={styles['device-page__progress-header']}>
+                <span className={styles['device-page__progress-step']}>{firmwareProgress.message}</span>
+                <span className={styles['device-page__progress-pct']}>{Math.round(firmwareProgress.progress)}%</span>
+              </div>
+              <div className={styles['device-page__progress-bar']}>
+                <div
+                  className={styles['device-page__progress-fill']}
+                  style={{ width: `${firmwareProgress.progress}%` }}
+                />
+              </div>
+              <div className={styles['device-page__progress-steps']}>
+                <span className={`${styles['device-page__step']} ${firmwareProgress.step === 'preparing' || firmwareProgress.step === 'sending' || firmwareProgress.step === 'verifying' || firmwareProgress.step === 'complete' ? styles['device-page__step--done'] : ''}`}>
+                  Preparing
+                </span>
+                <span className={`${styles['device-page__step']} ${firmwareProgress.step === 'sending' || firmwareProgress.step === 'verifying' || firmwareProgress.step === 'complete' ? styles['device-page__step--done'] : ''}`}>
+                  Sending
+                </span>
+                <span className={`${styles['device-page__step']} ${firmwareProgress.step === 'verifying' || firmwareProgress.step === 'complete' ? styles['device-page__step--done'] : ''}`}>
+                  Verifying
+                </span>
+                <span className={`${styles['device-page__step']} ${firmwareProgress.step === 'complete' ? styles['device-page__step--done'] : ''}`}>
+                  Complete
+                </span>
+              </div>
+            </div>
+          )}
+
+          {firmwareProgress?.step === 'error' && (
+            <div className={styles['device-page__update-error']}>
+              <p>{firmwareProgress.message}</p>
+              <Button variant="secondary" onClick={() => setFirmwareProgress(null)}>Dismiss</Button>
+            </div>
+          )}
+        </div>
+      </article>
+    </div>
+  );
+
+  const infoSection = (
+    <div className={styles['device-page__stacked-grid']}>
+      <div className={styles['device-page__hero']}>
+        <div className={styles['device-page__metrics']}>
+          <article className={styles['device-page__metric-card']}>
+            <span className={styles['device-page__metric-label']}>
+              <IconWifiOff size={14} />
+              RSSI
+            </span>
+            <strong>{formatRssi(device.rssi)}</strong>
+          </article>
+
+          <article className={styles['device-page__metric-card']}>
+            <span className={styles['device-page__metric-label']}>
+              <IconAntennaBars3 size={14} />
+              Signal
+            </span>
+            <strong>{signalStrengthLabel(device.signalStrength)}</strong>
+          </article>
+
+          <article className={styles['device-page__metric-card']}>
+            <span className={styles['device-page__metric-label']}>
+              <IconDeviceDesktop size={14} />
+              Transport
+            </span>
+            <strong>{device.transport.toUpperCase()}</strong>
+          </article>
+        </div>
+      </div>
+
+      <article className={styles['device-page__panel']}>
+        <h2>Device Details</h2>
         <dl className={`${styles['device-page__definition-list']} ${styles['device-page__definition-list--wide']}`.trim()}>
+          <div>
+            <dt>Name</dt>
+            <dd>{device.name}</dd>
+          </div>
+          <div>
+            <dt>Model</dt>
+            <dd>{device.modelId}</dd>
+          </div>
+          <div>
+            <dt>Address</dt>
+            <dd>{device.address}</dd>
+          </div>
           <div>
             <dt>RSSI</dt>
             <dd>{rssiLabel(device.rssi)} ({formatRssi(device.rssi)})</dd>
@@ -322,6 +485,32 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
             <dd>{signalStrengthLabel(device.signalStrength)} ({device.signalStrength}/5 bars)</dd>
           </div>
           <div>
+            <dt>Last seen</dt>
+            <dd>{formatLastSeen(device.lastSeenSecondsAgo)}</dd>
+          </div>
+          {firmwareInfo && (
+            <>
+              <div>
+                <dt>Firmware version</dt>
+                <dd>v{firmwareInfo.version}</dd>
+              </div>
+              <div>
+                <dt>Hardware rev</dt>
+                <dd>{firmwareInfo.hardwareRev}</dd>
+              </div>
+              <div>
+                <dt>Uptime</dt>
+                <dd>{firmwareInfo.uptimeSecs}s</dd>
+              </div>
+            </>
+          )}
+        </dl>
+      </article>
+
+      <article className={styles['device-page__panel']}>
+        <h2>Advertisement Data</h2>
+        <dl className={`${styles['device-page__definition-list']} ${styles['device-page__definition-list--wide']}`.trim()}>
+          <div>
             <dt>Manufacturer data</dt>
             <dd>{device.manufacturerData.length > 0 ? device.manufacturerData.join(', ') : 'None'}</dd>
           </div>
@@ -330,51 +519,6 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
             <dd>{device.serviceUuids.length > 0 ? device.serviceUuids.join(', ') : 'None'}</dd>
           </div>
         </dl>
-      </article>
-
-      <article className={styles['device-page__panel']}>
-        <h2>Recent readings</h2>
-        <div className={styles['device-page__reading-list']}>
-          <div>
-            <span>Advertisement</span>
-            <strong>{device.connected ? 'Visible' : 'Not visible'}</strong>
-          </div>
-          <div>
-            <span>Last seen</span>
-            <strong>{formatLastSeen(device.lastSeenSecondsAgo)}</strong>
-          </div>
-        </div>
-      </article>
-    </div>
-  );
-
-  const settingsSection = (
-    <div className={styles['device-page__stacked-grid']}>
-      <article className={styles['device-page__panel']}>
-        <h2>Settings</h2>
-        <div className={styles['device-page__setting-list']}>
-          <div className={styles['device-page__setting-row']}>
-            <div>
-              <h3>Auto refresh</h3>
-              <p>Keep the BLE scan stream updated as new advertisements are discovered.</p>
-            </div>
-            <span className={styles['device-page__setting-value']}>On</span>
-          </div>
-          <div className={styles['device-page__setting-row']}>
-            <div>
-              <h3>Refresh window</h3>
-              <p>Retain devices for 30 seconds after their last observed advertisement.</p>
-            </div>
-            <span className={styles['device-page__setting-value']}>30s</span>
-          </div>
-          <div className={styles['device-page__setting-row']}>
-            <div>
-              <h3>Notifications</h3>
-              <p>Send alerts when a visible advertiser disappears or a new device appears.</p>
-            </div>
-            <span className={styles['device-page__setting-value']}>On</span>
-          </div>
-        </div>
       </article>
     </div>
   );
@@ -410,10 +554,9 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
             <h1>{activeSectionLabel}</h1>
           </div>
 
-          {activeSection === 'dashboard' && dashboardSection}
-          {activeSection === 'controls' && controlsSection}
-          {activeSection === 'data' && dataSection}
-          {activeSection === 'settings' && settingsSection}
+          {activeSection === 'general' && generalSection}
+          {activeSection === 'updates' && updatesSection}
+          {activeSection === 'info' && infoSection}
         </div>
       </div>
     </section>

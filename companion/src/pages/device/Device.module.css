@@ -210,13 +210,6 @@
   gap: 0.8rem;
 }
 
-.device-page__reading-list {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.8rem;
-}
-
-.device-page__reading-list div,
 .device-page__setting-row {
   padding: 0.95rem 1rem;
   border: 1px solid var(--border-subtle);
@@ -224,20 +217,11 @@
   background: var(--bg-surface);
 }
 
-.device-page__reading-list span,
 .device-page__setting-row p {
   display: block;
   color: var(--text-muted);
   font-size: 0.9rem;
   line-height: 1.45;
-}
-
-.device-page__reading-list strong {
-  display: block;
-  margin-top: 0.4rem;
-  color: var(--text-primary);
-  font-size: 0.98rem;
-  font-weight: 600;
 }
 
 .device-page__setting-list {
@@ -275,6 +259,120 @@
   font-weight: 600;
 }
 
+.device-page__update-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.2rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--status-success) 40%, var(--border-subtle));
+  border-radius: 0.95rem;
+  background: color-mix(in srgb, var(--status-success) 8%, var(--bg-surface));
+}
+
+.device-page__update-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.device-page__update-info strong {
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.device-page__update-info span {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.device-page__update-notes {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.device-page__update-progress {
+  padding: 1.2rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.95rem;
+  background: var(--bg-surface);
+}
+
+.device-page__progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.device-page__progress-step {
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.device-page__progress-pct {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.device-page__progress-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elevated) 60%, transparent);
+  overflow: hidden;
+}
+
+.device-page__progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--status-success);
+  transition: width 0.3s ease;
+}
+
+.device-page__progress-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.85rem;
+}
+
+.device-page__step {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.5;
+}
+
+.device-page__step--done {
+  color: var(--status-success);
+  opacity: 1;
+}
+
+.device-page__update-error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--status-error) 40%, var(--border-subtle));
+  border-radius: 0.95rem;
+  background: color-mix(in srgb, var(--status-error) 8%, var(--bg-surface));
+}
+
+.device-page__update-error p {
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  margin: 0;
+}
+
 @media (max-width: 1024px) {
   .device-page__shell {
     display: block;
@@ -305,8 +403,7 @@
   .device-page__metrics,
   .device-page__definition-list,
   .device-page__definition-list--wide,
-  .device-page__control-list,
-  .device-page__reading-list {
+  .device-page__control-list {
     grid-template-columns: 1fr;
   }
 }

@@ -1,15 +1,24 @@
 mod ble;
+mod commands;
+mod constants;
+mod protocol;
 mod serial;
+mod transport;
+mod types;
 
 use ble::{
-    authenticate_ble_device, change_ble_device_password, connect_ble_device, disconnect_ble_device,
-    factory_reset_ble_device, get_ble_devices, restart_ble_device, scan_ble_devices,
-    submit_ble_setup, update_ble_device_wifi, BleDeviceStore,
+    authenticate_ble_device, change_ble_device_password, connect_ble_device,
+    disconnect_ble_device, factory_reset_ble_device, get_ble_devices,
+    restart_ble_device, scan_ble_devices, submit_ble_setup, update_ble_device_wifi,
+    get_firmware_info_ble, update_firmware_ble, download_and_update_firmware_ble,
+    BleDeviceStore,
 };
 use serial::{
-    change_serial_device_password, connect_serial_device, factory_reset_serial_device,
-    get_serial_devices, restart_serial_device, scan_serial_devices, submit_serial_setup,
-    update_serial_device_wifi, SerialDeviceStore,
+    change_serial_device_password, connect_serial_device, factory_reset_serial_device, get_serial_devices,
+    restart_serial_device, scan_serial_devices, submit_serial_setup,
+    update_serial_device_wifi, get_firmware_info_serial, update_firmware_serial,
+    download_and_update_firmware_serial,
+    SerialDeviceStore,
 };
 use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::{AppHandle, Manager};
@@ -138,12 +147,18 @@ pub fn run() {
             factory_reset_ble_device,
             change_ble_device_password,
             update_ble_device_wifi,
+            get_firmware_info_ble,
+            update_firmware_ble,
+            download_and_update_firmware_ble,
             connect_serial_device,
             submit_serial_setup,
             restart_serial_device,
             factory_reset_serial_device,
             change_serial_device_password,
             update_serial_device_wifi,
+            get_firmware_info_serial,
+            update_firmware_serial,
+            download_and_update_firmware_serial,
             set_background_mode
         ])
         .run(tauri::generate_context!())

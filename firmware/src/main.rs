@@ -1,6 +1,7 @@
 mod ble;
 mod command_processor;
 mod config;
+mod ota;
 mod serial;
 mod wifi;
 
@@ -25,6 +26,8 @@ fn main() -> anyhow::Result<()> {
     esp_idf_svc::log::EspLogger::initialize_default();
 
     info!("Booting firmware...");
+
+    command_processor::init_boot_time();
 
     let peripherals = esp_idf_svc::hal::peripherals::Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;

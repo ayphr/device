@@ -1,4 +1,4 @@
-use crate::constants::RESPONSE_STATUS;
+use crate::constants::{RESPONSE_FIRMWARE_INFO, RESPONSE_STATUS};
 use alloc::string::String;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,5 +70,58 @@ impl SensorTelemetry {
             humidity_pct: f32::from_le_bytes(bytes[4..8].try_into().unwrap()),
             pressure_hpa: f32::from_le_bytes(bytes[8..12].try_into().unwrap()),
         })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct FirmwareInfoResponse {
+    pub version: String,
+    pub hardware_rev: String,
+    pub uptime_secs: u32,
+}
+
+impl FirmwareInfoResponse {
+    pub fn parse(payload: &[u8]) -> Result<Self, &'static str> {
+        if payload.len() < 2 || payload[0] != RESPONSE_FIRMWARE_INFO {
+            return Err("Invalid firmware info payload or opcode");
+        }
+
+        let mut cursor = 1;
+
+        let version = Self::read_string_field(payload, &mut cursor)?;
+        let hardware_rev = Self::read_string_field(payload, &mut cursor)?;
+
+        if cursor + 4 > payload.len() {
+            return Err("Firmware info payload truncated before uptime");
+        }
+        let uptime_secs = u32::from_le_bytes([
+            payload[cursor],
+            payload[cursor + 1],
+            payload[cursor + 2],
+            payload[cursor + 3],
+        ]);
+
+        Ok(Self {
+            version,
+            hardware_rev,
+            uptime_secs,
+        })
+    }
+
+    fn read_string_field(payload: &[u8], cursor: &mut usize) -> Result<String, &'static str> {
+        if *cursor >= payload.len() {
+            return Err("Firmware info payload truncated at string field");
+        }
+        let len = payload[*cursor] as usize;
+        *cursor += 1;
+        if *cursor + len > payload.len() {
+            return Err("Firmware info payload truncated inside string field");
+        }
+        let val = core::str::from_utf8(&payload[*cursor..*cursor + len])
+            .map_err(|_| "Firmware info contains invalid UTF-8")?
+            .into();
+        *cursor += len;
+        Ok(val)
     }
 }

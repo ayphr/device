@@ -1,30 +1,25 @@
 use btleplug::api::{Central, Peripheral as _};
 use btleplug::platform::Peripheral;
-use std::fmt::Write as _;
 use tauri::{AppHandle, State};
 use tokio::time::{sleep, Duration};
+use tracing::warn;
 
 use ayphr_protocol::{
-    append_field, COMMAND_APPLY_SETUP, COMMAND_AUTHENTICATE, COMMAND_CHANGE_PASSWORD,
-    COMMAND_FACTORY_RESET, COMMAND_RESTART, COMMAND_UPDATE_WIFI, RESPONSE_AUTH_FAILED,
-    RESPONSE_AUTH_OK, RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_FACTORY_RESET_OK,
-    RESPONSE_RESTART_OK, RESPONSE_SETUP_OK, RESPONSE_UPDATE_WIFI_OK,
+    COMMAND_AUTHENTICATE, RESPONSE_AUTH_FAILED, RESPONSE_AUTH_OK,
     FIRMWARE_RX_CHARACTERISTIC_UUID, FIRMWARE_SERVICE_UUID, FIRMWARE_TX_CHARACTERISTIC_UUID,
+    BLE_CHUNK_SIZE,
 };
-use super::protocol::{parse_uuid, query_status, send_command};
+use crate::commands;
+use crate::protocol::log_string_error;
+use crate::transport::Transport;
+use crate::types::BleConnectionState;
+
+use super::protocol::parse_uuid;
 use super::scanner::get_primary_adapter;
 use super::state::{
     emit_devices, get_live_peripheral, refresh_snapshots_with_connection_state, upsert_connection,
-    ActiveBleConnection, BleConnectionState, BleDeviceStore,
+    ActiveBleConnection, BleDeviceStore,
 };
-
-use tracing::{debug, error, info, warn};
-
-fn log_string_error(context: &str, error: impl std::fmt::Display) -> String {
-    let message = error.to_string();
-    error!("[ble] {}: {}", context, message);
-    message
-}
 
 const DISCOVERY_RETRY_ATTEMPTS: usize = 5;
 const DISCOVERY_RETRY_DELAY: Duration = Duration::from_millis(600);
@@ -37,24 +32,18 @@ pub async fn connect_ble_device(
 ) -> Result<BleConnectionState, String> {
     let mut connection = ensure_connected(device_id.clone(), &store)
         .await
-        .map_err(|error| log_string_error("connect failed", error))?;
-    let status = query_status(&connection)
+        .map_err(|error| log_string_error("connect failed", error, "ble"))?;
+    let status = Transport::Ble(connection.clone())
+        .query_status()
         .await
-        .map_err(|error| log_string_error("status query failed", error))?;
+        .map_err(|error| log_string_error("status query failed", error, "ble"))?;
     connection.setup_complete = status.setup_complete;
     connection.authenticated = status.authenticated;
     upsert_connection(&store, &device_id, connection.clone());
     refresh_snapshots_with_connection_state(&store);
     emit_devices(&app, &store);
 
-    Ok(BleConnectionState {
-        connected: !status.setup_complete || status.authenticated,
-        authenticated: status.authenticated,
-        auth_required: status.auth_required,
-        wifi_required: status.wifi_required,
-        setup_complete: status.setup_complete,
-        device_name: status.device_name,
-    })
+    Ok(commands::build_connection_state(&status))
 }
 
 #[tauri::command]
@@ -66,17 +55,14 @@ pub async fn authenticate_ble_device(
 ) -> Result<BleConnectionState, String> {
     let mut connection = ensure_connected(device_id.clone(), &store)
         .await
-        .map_err(|error| log_string_error("authenticate connect failed", error))?;
+        .map_err(|error| log_string_error("authenticate connect failed", error, "ble"))?;
     let mut command = vec![COMMAND_AUTHENTICATE];
-    append_field(&mut command, &password)
-        .map_err(|error| log_string_error("authenticate payload encoding failed", error))?;
+    ayphr_protocol::append_field(&mut command, &password)
+        .map_err(|error| log_string_error("authenticate payload encoding failed", error, "ble"))?;
 
-    debug!("[ble] authenticate command bytes={}", format_bytes(&command));
-
-    let response = send_command(&connection, command)
+    let response = super::protocol::send_command(&connection, command)
         .await
-        .map_err(|error| log_string_error("authenticate command failed", error))?;
-    debug!("[ble] authenticate response bytes={}", format_bytes(&response));
+        .map_err(|error| log_string_error("authenticate command failed", error, "ble"))?;
     match response.first().copied() {
         Some(RESPONSE_AUTH_OK) => {
             connection.authenticated = true;
@@ -86,33 +72,28 @@ pub async fn authenticate_ble_device(
             upsert_connection(&store, &device_id, connection);
             refresh_snapshots_with_connection_state(&store);
             emit_devices(&app, &store);
-            return Err(log_string_error("authenticate rejected", "Invalid device password"));
+            return Err(log_string_error("authenticate rejected", "Invalid device password", "ble"));
         }
         _ => {
             return Err(log_string_error(
                 "authenticate rejected",
                 "Unexpected response from device while authenticating",
+                "ble",
             ));
         }
     }
 
-    let status = query_status(&connection)
+    let status = Transport::Ble(connection.clone())
+        .query_status()
         .await
-        .map_err(|error| log_string_error("post-auth status query failed", error))?;
+        .map_err(|error| log_string_error("post-auth status query failed", error, "ble"))?;
     connection.setup_complete = status.setup_complete;
     connection.authenticated = status.authenticated;
     upsert_connection(&store, &device_id, connection.clone());
     refresh_snapshots_with_connection_state(&store);
     emit_devices(&app, &store);
 
-    Ok(BleConnectionState {
-        connected: !status.setup_complete || status.authenticated,
-        authenticated: status.authenticated,
-        auth_required: status.auth_required,
-        wifi_required: status.wifi_required,
-        setup_complete: status.setup_complete,
-        device_name: status.device_name,
-    })
+    Ok(commands::build_connection_state(&status))
 }
 
 #[tauri::command]
@@ -129,52 +110,31 @@ pub async fn submit_ble_setup(
 ) -> Result<BleConnectionState, String> {
     let mut connection = ensure_connected(device_id.clone(), &store)
         .await
-        .map_err(|error| log_string_error("setup connect failed", error))?;
-    let mut command = vec![COMMAND_APPLY_SETUP];
-    append_field(&mut command, &device_name)
-        .map_err(|error| log_string_error("setup name encoding failed", error))?;
-    append_field(&mut command, &wifi_ssid)
-        .map_err(|error| log_string_error("setup wifi ssid encoding failed", error))?;
-    append_field(&mut command, &wifi_password)
-        .map_err(|error| log_string_error("setup wifi password encoding failed", error))?;
-    append_field(&mut command, &device_password)
-        .map_err(|error| log_string_error("setup device password encoding failed", error))?;
-    command.push(if auth_required { 1 } else { 0 });
-    command.push(if skip_wifi { 1 } else { 0 });
+        .map_err(|error| log_string_error("setup connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection.clone());
 
-    debug!("[ble] setup command bytes={}", format_bytes(&command));
+    let result = commands::do_submit_setup(
+        &transport,
+        &device_name,
+        &wifi_ssid,
+        &wifi_password,
+        &device_password,
+        auth_required,
+        skip_wifi,
+    )
+    .await?;
 
-    let response = match send_command(&connection, command).await {
-        Ok(response) => response,
-        Err(error) => {
-            return Err(log_string_error("setup command failed", error));
-        }
-    };
-    debug!("[ble] setup response bytes={}", format_bytes(&response));
-    if response.first().copied() != Some(RESPONSE_SETUP_OK) {
-        return Err(log_string_error("setup rejected", "Device rejected setup payload"));
-    }
-
-    let status = match query_status(&connection).await {
-        Ok(status) => status,
-        Err(error) => {
-            return Err(log_string_error("post-setup status query failed", error));
-        }
-    };
+    let status = transport
+        .query_status()
+        .await
+        .map_err(|error| log_string_error("post-setup status query failed", error, "ble"))?;
     connection.setup_complete = status.setup_complete;
     connection.authenticated = status.authenticated;
     upsert_connection(&store, &device_id, connection.clone());
     refresh_snapshots_with_connection_state(&store);
     emit_devices(&app, &store);
 
-    Ok(BleConnectionState {
-        connected: !status.setup_complete || status.authenticated,
-        authenticated: status.authenticated,
-        auth_required: status.auth_required,
-        wifi_required: status.wifi_required,
-        setup_complete: status.setup_complete,
-        device_name: status.device_name,
-    })
+    Ok(result)
 }
 
 #[tauri::command]
@@ -184,18 +144,9 @@ pub async fn restart_ble_device(
 ) -> Result<(), String> {
     let connection = ensure_connected(device_id.clone(), &store)
         .await
-        .map_err(|error| log_string_error("restart connect failed", error))?;
-    let command = vec![COMMAND_RESTART];
-
-    let response = send_command(&connection, command)
-        .await
-        .map_err(|error| log_string_error("restart command failed", error))?;
-
-    if response.first().copied() != Some(RESPONSE_RESTART_OK) {
-        return Err(log_string_error("restart rejected", "Device rejected restart command"));
-    }
-
-    Ok(())
+        .map_err(|error| log_string_error("restart connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_restart(&transport).await
 }
 
 #[tauri::command]
@@ -205,21 +156,9 @@ pub async fn factory_reset_ble_device(
 ) -> Result<(), String> {
     let connection = ensure_connected(device_id.clone(), &store)
         .await
-        .map_err(|error| log_string_error("factory reset connect failed", error))?;
-    let command = vec![COMMAND_FACTORY_RESET];
-
-    let response = send_command(&connection, command)
-        .await
-        .map_err(|error| log_string_error("factory reset command failed", error))?;
-
-    if response.first().copied() != Some(RESPONSE_FACTORY_RESET_OK) {
-        return Err(log_string_error(
-            "factory reset rejected",
-            "Device rejected factory reset command",
-        ));
-    }
-
-    Ok(())
+        .map_err(|error| log_string_error("factory reset connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_factory_reset(&transport).await
 }
 
 #[tauri::command]
@@ -231,25 +170,9 @@ pub async fn change_ble_device_password(
 ) -> Result<(), String> {
     let connection = ensure_connected(device_id.clone(), &store)
         .await
-        .map_err(|error| log_string_error("change password connect failed", error))?;
-    let mut command = vec![COMMAND_CHANGE_PASSWORD];
-    append_field(&mut command, &current_password)
-        .map_err(|error| log_string_error("change password current encoding failed", error))?;
-    append_field(&mut command, &new_password)
-        .map_err(|error| log_string_error("change password new encoding failed", error))?;
-
-    let response = send_command(&connection, command)
-        .await
-        .map_err(|error| log_string_error("change password command failed", error))?;
-
-    if response.first().copied() != Some(RESPONSE_CHANGE_PASSWORD_OK) {
-        return Err(log_string_error(
-            "change password rejected",
-            "Device rejected password change",
-        ));
-    }
-
-    Ok(())
+        .map_err(|error| log_string_error("change password connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_change_password(&transport, &current_password, &new_password).await
 }
 
 #[tauri::command]
@@ -261,25 +184,51 @@ pub async fn update_ble_device_wifi(
 ) -> Result<(), String> {
     let connection = ensure_connected(device_id.clone(), &store)
         .await
-        .map_err(|error| log_string_error("update wifi connect failed", error))?;
-    let mut command = vec![COMMAND_UPDATE_WIFI];
-    append_field(&mut command, &ssid)
-        .map_err(|error| log_string_error("update wifi ssid encoding failed", error))?;
-    append_field(&mut command, &password)
-        .map_err(|error| log_string_error("update wifi password encoding failed", error))?;
+        .map_err(|error| log_string_error("update wifi connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_update_wifi(&transport, &ssid, &password).await
+}
 
-    let response = send_command(&connection, command)
+#[tauri::command]
+pub async fn get_firmware_info_ble(
+    device_id: String,
+    store: State<'_, BleDeviceStore>,
+) -> Result<crate::types::FirmwareInfoResult, String> {
+    let connection = ensure_connected(device_id.clone(), &store)
         .await
-        .map_err(|error| log_string_error("update wifi command failed", error))?;
+        .map_err(|error| log_string_error("firmware info connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_get_firmware_info(&transport).await
+}
 
-    if response.first().copied() != Some(RESPONSE_UPDATE_WIFI_OK) {
-        return Err(log_string_error(
-            "update wifi rejected",
-            "Device rejected wifi settings update",
-        ));
-    }
+#[tauri::command]
+pub async fn update_firmware_ble(
+    device_id: String,
+    firmware_path: String,
+    app: AppHandle,
+    store: State<'_, BleDeviceStore>,
+) -> Result<(), String> {
+    let firmware_data = std::fs::read(&firmware_path)
+        .map_err(|error| log_string_error("failed to read firmware file", error, "ble"))?;
+    let connection = ensure_connected(device_id.clone(), &store)
+        .await
+        .map_err(|error| log_string_error("firmware update connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_update_firmware(&transport, firmware_data, &app, BLE_CHUNK_SIZE, "ble").await
+}
 
-    Ok(())
+#[tauri::command]
+pub async fn download_and_update_firmware_ble(
+    device_id: String,
+    download_url: String,
+    app: AppHandle,
+    store: State<'_, BleDeviceStore>,
+) -> Result<(), String> {
+    let connection = ensure_connected(device_id.clone(), &store)
+        .await
+        .map_err(|error| log_string_error("firmware update connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_download_and_update_firmware(&transport, &download_url, &app, BLE_CHUNK_SIZE, "ble").await
 }
 
 #[tauri::command]
@@ -316,7 +265,7 @@ async fn ensure_connected(
             .peripheral
             .is_connected()
             .await
-            .map_err(|error| log_string_error("checking existing connection failed", error))?
+            .map_err(|error| log_string_error("checking existing connection failed", error, "ble"))?
         {
             return Ok(connection);
         }
@@ -330,32 +279,32 @@ async fn ensure_connected(
     } else {
         warn!("[ble] cached peripheral missing for {} , falling back to rediscovery", device_id);
         discover_peripheral(&device_id).await.ok_or_else(|| {
-            log_string_error("device lookup failed", "Device is not currently discoverable")
+            log_string_error("device lookup failed", "Device is not currently discoverable", "ble")
         })?
     };
 
     if !peripheral
         .is_connected()
         .await
-        .map_err(|error| log_string_error("checking peripheral connected state failed", error))?
+        .map_err(|error| log_string_error("checking peripheral connected state failed", error, "ble"))?
     {
         peripheral
             .connect()
             .await
-            .map_err(|error| log_string_error("Failed to connect to device", error))?;
+            .map_err(|error| log_string_error("Failed to connect to device", error, "ble"))?;
     }
 
     peripheral
         .discover_services()
         .await
-        .map_err(|error| log_string_error("Failed to discover device services", error))?;
+        .map_err(|error| log_string_error("Failed to discover device services", error, "ble"))?;
 
     let service_uuid = parse_uuid(FIRMWARE_SERVICE_UUID)
-        .map_err(|error| log_string_error("service uuid parse failed", error))?;
+        .map_err(|error| log_string_error("service uuid parse failed", error, "ble"))?;
     let rx_uuid = parse_uuid(FIRMWARE_RX_CHARACTERISTIC_UUID)
-        .map_err(|error| log_string_error("rx uuid parse failed", error))?;
+        .map_err(|error| log_string_error("rx uuid parse failed", error, "ble"))?;
     let tx_uuid = parse_uuid(FIRMWARE_TX_CHARACTERISTIC_UUID)
-        .map_err(|error| log_string_error("tx uuid parse failed", error))?;
+        .map_err(|error| log_string_error("tx uuid parse failed", error, "ble"))?;
 
     let characteristics = peripheral.characteristics();
     let has_service = peripheral
@@ -366,6 +315,7 @@ async fn ensure_connected(
         return Err(log_string_error(
             "firmware service missing",
             "Connected device is missing required firmware service",
+            "ble",
         ));
     }
 
@@ -374,7 +324,7 @@ async fn ensure_connected(
         .find(|characteristic| characteristic.uuid == rx_uuid)
         .cloned()
         .ok_or_else(|| {
-            log_string_error("characteristic lookup failed", "Missing firmware RX characteristic")
+            log_string_error("characteristic lookup failed", "Missing firmware RX characteristic", "ble")
         })?;
 
     let tx_characteristic = characteristics
@@ -382,7 +332,7 @@ async fn ensure_connected(
         .find(|characteristic| characteristic.uuid == tx_uuid)
         .cloned()
         .ok_or_else(|| {
-            log_string_error("characteristic lookup failed", "Missing firmware TX characteristic")
+            log_string_error("characteristic lookup failed", "Missing firmware TX characteristic", "ble")
         })?;
 
     let authenticated = {
@@ -404,7 +354,7 @@ async fn discover_peripheral(device_id: &str) -> Option<Peripheral> {
         let adapter = match get_primary_adapter().await {
             Ok(adapter) => adapter,
             Err(error) => {
-                warn!("[ble] adapter lookup attempt {} failed: {}", attempt, error);
+                tracing::warn!("[ble] adapter lookup attempt {} failed: {}", attempt, error);
                 sleep(DISCOVERY_RETRY_DELAY).await;
                 continue;
             }
@@ -413,7 +363,7 @@ async fn discover_peripheral(device_id: &str) -> Option<Peripheral> {
         let peripherals = match adapter.peripherals().await {
             Ok(peripherals) => peripherals,
             Err(error) => {
-                warn!("[ble] peripheral enumeration attempt {} failed: {}", attempt, error);
+                tracing::warn!("[ble] peripheral enumeration attempt {} failed: {}", attempt, error);
                 sleep(DISCOVERY_RETRY_DELAY).await;
                 continue;
             }
@@ -423,34 +373,20 @@ async fn discover_peripheral(device_id: &str) -> Option<Peripheral> {
             match peripheral.properties().await {
                 Ok(Some(_)) => {
                     if peripheral.id().to_string() == device_id {
-                        info!("[ble] discovered peripheral on attempt {}", attempt);
+                        tracing::info!("[ble] discovered peripheral on attempt {}", attempt);
                         return Some(peripheral);
                     }
                 }
                 Ok(None) => continue,
                 Err(error) => {
-                    warn!("[ble] property lookup attempt {} failed: {}", attempt, error);
+                    tracing::warn!("[ble] property lookup attempt {} failed: {}", attempt, error);
                     continue;
                 }
             }
         }
-        info!("[ble] device {} not found on discovery attempt {}", device_id, attempt);
+        tracing::info!("[ble] device {} not found on discovery attempt {}", device_id, attempt);
         sleep(DISCOVERY_RETRY_DELAY).await;
     }
 
     None
-}
-
-fn format_bytes(bytes: &[u8]) -> String {
-    let mut output = String::new();
-
-    for (index, byte) in bytes.iter().enumerate() {
-        if index > 0 {
-            output.push(' ');
-        }
-
-        let _ = write!(&mut output, "{byte:02x}");
-    }
-
-    output
 }

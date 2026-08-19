@@ -4,9 +4,10 @@ use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 use tracing::debug;
 
-use super::constants::{DEVICE_RETENTION_WINDOW, SCAN_INTERVAL};
+use super::constants::SERIAL_DEVICES_UPDATED_EVENT;
 use super::protocol::query_status;
 use super::state::{SerialDeviceSnapshot, SerialDeviceStore};
+use crate::constants::{DEVICE_RETENTION_WINDOW, SCAN_INTERVAL};
 
 const NON_DEVICE_PORT_PATTERNS: &[&str] = &[
     "Bluetooth",
@@ -87,7 +88,7 @@ pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Re
         active_devices.sort_by(|left, right| left.name.cmp(&right.name));
 
         *store.devices.lock().unwrap() = active_devices.clone();
-        let _ = app.emit(super::constants::SERIAL_DEVICES_UPDATED_EVENT, active_devices);
+        let _ = app.emit(SERIAL_DEVICES_UPDATED_EVENT, active_devices);
 
         tokio::time::sleep(SCAN_INTERVAL).await;
     }

@@ -1,53 +1,13 @@
 use serialport::SerialPort;
-use tracing::{debug, warn};
 
-use ayphr_protocol::{COMMAND_GET_STATUS, RESPONSE_STATUS};
-
-use super::constants::COMMAND_TIMEOUT;
-use crate::ble::state::ParsedStatus;
+use super::constants::SERIAL_BAUD_RATE;
+use crate::constants::COMMAND_TIMEOUT;
+use crate::protocol::parse_status_response;
+use crate::types::ParsedStatus;
 
 pub fn query_status(port_name: &str) -> Result<ParsedStatus, String> {
-    debug!("[serial] querying device status on {}", port_name);
-    let response = send_command(port_name, vec![COMMAND_GET_STATUS])?;
-    debug!("[serial] status response bytes={}", format_bytes(&response));
+    let response = send_command(port_name, vec![ayphr_protocol::COMMAND_GET_STATUS])?;
     parse_status_response(&response)
-}
-
-pub fn parse_status_response(payload: &[u8]) -> Result<ParsedStatus, String> {
-    if payload.len() < 7 || payload[0] != RESPONSE_STATUS {
-        warn!("[serial] invalid status payload={}", format_bytes(payload));
-        return Err("Invalid status response payload".to_string());
-    }
-
-    let setup_complete = payload[1] == 1;
-    let authenticated = payload[2] == 1;
-    let auth_required = payload[3] == 1;
-    let wifi_required = payload[4] == 1;
-    let name_length = payload[6] as usize;
-
-    if payload.len() < 7 + name_length {
-        warn!("[serial] status response missing device name bytes");
-        return Err("Status response is missing device name bytes".to_string());
-    }
-
-    let device_name = String::from_utf8(payload[7..7 + name_length].to_vec())
-        .map_err(|error| {
-            warn!("[serial] device name decode failed: {}", error);
-            "Device name is not valid UTF-8".to_string()
-        })?;
-
-    debug!(
-        "[serial] parsed status setup_complete={} authenticated={} auth_required={} wifi_required={} device_name={}",
-        setup_complete, authenticated, auth_required, wifi_required, device_name
-    );
-
-    Ok(ParsedStatus {
-        setup_complete,
-        authenticated,
-        auth_required,
-        wifi_required,
-        device_name,
-    })
 }
 
 pub fn send_command(port_name: &str, payload: Vec<u8>) -> Result<Vec<u8>, String> {
@@ -57,7 +17,7 @@ pub fn send_command(port_name: &str, payload: Vec<u8>) -> Result<Vec<u8>, String
 }
 
 fn open_port(port_name: &str) -> Result<Box<dyn SerialPort>, String> {
-    serialport::new(port_name, super::constants::SERIAL_BAUD_RATE)
+    serialport::new(port_name, SERIAL_BAUD_RATE)
         .timeout(COMMAND_TIMEOUT)
         .open()
         .map_err(|error| format!("Failed to open serial port {port_name}: {error}"))
@@ -87,12 +47,4 @@ fn read_frame(port: &mut dyn SerialPort) -> Result<Vec<u8>, String> {
     port.read_exact(&mut payload)
         .map_err(|error| format!("Failed to read serial frame payload: {error}"))?;
     Ok(payload)
-}
-
-fn format_bytes(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<Vec<_>>()
-        .join(" ")
 }

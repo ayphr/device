@@ -4,9 +4,11 @@ use std::collections::HashMap;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 
+use super::constants::BLE_DEVICES_UPDATED_EVENT;
 use super::state::{upsert_live_peripheral, BleDeviceSnapshot, BleDeviceStore};
+use crate::constants::{DEVICE_RETENTION_WINDOW, SCAN_INTERVAL};
+use crate::protocol::format_bytes;
 use ayphr_protocol::{FIRMWARE_MANUFACTURER_ID, FIRMWARE_SERVICE_UUID};
-use super::constants::{DEVICE_RETENTION_WINDOW, SCAN_INTERVAL};
 
 pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(), String> {
     let adapter = get_primary_adapter().await?;
@@ -14,7 +16,7 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
     if adapter.start_scan(ScanFilter::default()).await.is_err() {
         let empty_devices = Vec::new();
         *store.devices.lock().unwrap() = empty_devices.clone();
-        let _ = app.emit(super::constants::BLE_DEVICES_UPDATED_EVENT, empty_devices);
+        let _ = app.emit(BLE_DEVICES_UPDATED_EVENT, empty_devices);
         return Err("failed to start BLE scan".to_string());
     }
 
@@ -129,7 +131,7 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
         active_devices.sort_by(|left, right| right.signal_strength.cmp(&left.signal_strength));
 
         *store.devices.lock().unwrap() = active_devices.clone();
-        let _ = app.emit(super::constants::BLE_DEVICES_UPDATED_EVENT, active_devices);
+        let _ = app.emit(BLE_DEVICES_UPDATED_EVENT, active_devices);
 
         tokio::time::sleep(SCAN_INTERVAL).await;
     }
@@ -174,12 +176,4 @@ fn status_label(rssi: Option<i16>, connectable: bool) -> String {
     } else {
         format!("{signal_label} advertising signal")
     }
-}
-
-fn format_bytes(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<Vec<_>>()
-        .join(" ")
 }

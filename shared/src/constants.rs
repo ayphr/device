@@ -5,6 +5,10 @@ pub const COMMAND_RESTART: u8 = 0x04;
 pub const COMMAND_FACTORY_RESET: u8 = 0x05;
 pub const COMMAND_CHANGE_PASSWORD: u8 = 0x06;
 pub const COMMAND_UPDATE_WIFI: u8 = 0x07;
+pub const COMMAND_GET_FIRMWARE_INFO: u8 = 0x08;
+pub const COMMAND_OTA_BEGIN: u8 = 0x09;
+pub const COMMAND_OTA_DATA: u8 = 0x0A;
+pub const COMMAND_OTA_END: u8 = 0x0B;
 
 pub const RESPONSE_STATUS: u8 = 0x81;
 pub const RESPONSE_AUTH_OK: u8 = 0x82;
@@ -15,7 +19,16 @@ pub const RESPONSE_FACTORY_RESET_OK: u8 = 0x86;
 pub const RESPONSE_CHANGE_PASSWORD_OK: u8 = 0x87;
 pub const RESPONSE_SETUP_FAILED: u8 = 0x88;
 pub const RESPONSE_UPDATE_WIFI_OK: u8 = 0x89;
+pub const RESPONSE_FIRMWARE_INFO: u8 = 0x8A;
+pub const RESPONSE_OTA_BEGIN_OK: u8 = 0x8B;
+pub const RESPONSE_OTA_DATA_OK: u8 = 0x8C;
+pub const RESPONSE_OTA_END_OK: u8 = 0x8D;
 pub const RESPONSE_ERROR: u8 = 0xFF;
+
+pub const FIRMWARE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+pub const SERIAL_CHUNK_SIZE: usize = 2048;
+pub const BLE_CHUNK_SIZE: usize = 200;
 
 pub const FIRMWARE_SERVICE_UUID: &str = "01171718-ce62-6a9a-5541-b839b04a7bd1";
 pub const FIRMWARE_RX_CHARACTERISTIC_UUID: &str = "02171718-ce62-6a9a-5541-b839b04a7bd1";

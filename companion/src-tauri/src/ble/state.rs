@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use super::constants::BLE_DEVICES_UPDATED_EVENT;
 
-const AUTH_CACHE_TIMEOUT: Duration = Duration::from_secs(600); // 10 minutes
+const AUTH_CACHE_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Clone, Default)]
 pub struct BleDeviceStore {
@@ -46,26 +46,6 @@ pub struct BleDeviceSnapshot {
     pub tx_power_level: Option<i16>,
     pub manufacturer_data: Vec<String>,
     pub service_uuids: Vec<String>,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BleConnectionState {
-    pub connected: bool,
-    pub authenticated: bool,
-    pub auth_required: bool,
-    pub wifi_required: bool,
-    pub setup_complete: bool,
-    pub device_name: String,
-}
-
-#[derive(Clone)]
-pub struct ParsedStatus {
-    pub setup_complete: bool,
-    pub authenticated: bool,
-    pub auth_required: bool,
-    pub wifi_required: bool,
-    pub device_name: String,
 }
 
 #[tauri::command]
