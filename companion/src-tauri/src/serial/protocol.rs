@@ -57,15 +57,10 @@ pub fn send_command(port_name: &str, payload: Vec<u8>) -> Result<Vec<u8>, String
 }
 
 fn open_port(port_name: &str) -> Result<Box<dyn SerialPort>, String> {
-    let mut port = serialport::new(port_name, super::constants::SERIAL_BAUD_RATE)
+    serialport::new(port_name, super::constants::SERIAL_BAUD_RATE)
         .timeout(COMMAND_TIMEOUT)
         .open()
-        .map_err(|error| format!("Failed to open serial port {port_name}: {error}"))?;
-
-    let _ = port.write_data_terminal_ready(false);
-    let _ = port.write_request_to_send(false);
-
-    Ok(port)
+        .map_err(|error| format!("Failed to open serial port {port_name}: {error}"))
 }
 
 fn write_frame(port: &mut dyn SerialPort, payload: &[u8]) -> Result<(), String> {
