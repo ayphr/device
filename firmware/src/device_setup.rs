@@ -1,374 +1,286 @@
+use crate::device_setup::DeviceSetup;
+use bme280_multibus::Bme280;
+use esp_idf_svc::eventloop::EspSystemEventLoop;
+use esp_idf_svc::hal::gpio::AnyIOPin;
+use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver};
+use esp_idf_svc::hal::peripherals::Peripherals;
+use esp_idf_svc::hal::uart::{config::Config as UartConfig, UartDriver};
+use esp_idf_svc::hal::units::Hertz;
+use esp_idf_svc::nvs::EspDefaultNvsPartition;
+use esp_idf_svc::wifi::{AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi};
+use esp32_nimble::{BLEAdvertisementData, BLEDevice, NimbleProperties};
+use log::{error, info, warn};
+use std::sync::mpsc::{channel, Sender};
+use std::sync::Arc;
+use std::time::Duration;
+
 use ayphr_protocol::{
-    COMMAND_APPLY_SETUP, COMMAND_AUTHENTICATE, COMMAND_CHANGE_PASSWORD, COMMAND_FACTORY_RESET,
-    COMMAND_GET_STATUS, COMMAND_RESTART, COMMAND_UPDATE_WIFI, RESPONSE_AUTH_FAILED,
-    RESPONSE_AUTH_OK, RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_ERROR, RESPONSE_FACTORY_RESET_OK,
-    RESPONSE_RESTART_OK, RESPONSE_SETUP_FAILED, RESPONSE_SETUP_OK, RESPONSE_STATUS,
-    RESPONSE_UPDATE_WIFI_OK,
+    FIRMWARE_MANUFACTURER_ID, FIRMWARE_RX_CHARACTERISTIC_UUID, FIRMWARE_SERVICE_UUID,
+    FIRMWARE_TX_CHARACTERISTIC_UUID,
 };
-use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
-use log::{info, warn};
-use std::sync::{Arc, Mutex};
 
-pub const DEFAULT_DEVICE_NAME: &str = "Unconfigured Geo";
+const SERIAL_BAUD_RATE: u32 = 115_200;
 
-#[derive(Clone)]
-pub struct DeviceSetupData {
-    pub device_name: String,
-    pub wifi_ssid: String,
-    pub wifi_password: String,
-    pub device_password: String,
-    pub auth_required: bool,
-    pub wifi_required: bool,
-    pub configured: bool,
+enum SystemEvent {
+    BleRequest(Vec<u8>),
+    ConfigurationUpdated,
 }
 
-impl Default for DeviceSetupData {
-    fn default() -> Self {
-        Self {
-            device_name: String::default(),
-            wifi_ssid: String::default(),
-            wifi_password: String::default(),
-            device_password: String::default(),
-            auth_required: true,
-            wifi_required: true,
-            configured: false,
-        }
-    }
-}
+fn main() -> anyhow::Result<()> {
+    esp_idf_svc::sys::link_patches();
+    esp_idf_svc::log::EspLogger::initialize_default();
 
-pub struct DeviceSetup {
-    nvs: EspNvs<NvsDefault>,
-    state: Mutex<State>,
-}
+    info!("Booting firmware...");
 
-impl DeviceSetup {
-    pub fn is_configured(&self) -> bool {
-        self.state.lock().unwrap().data.configured
-    }
-}
+    let peripherals = Peripherals::take()?;
+    let sys_loop = EspSystemEventLoop::take()?;
+    let nvs_partition = EspDefaultNvsPartition::take()?;
 
-struct State {
-    data: DeviceSetupData,
-    authenticated: bool,
-}
+    let setup = DeviceSetup::new(nvs_partition.clone())?;
+    let (event_tx, event_rx) = channel::<SystemEvent>();
 
-impl DeviceSetup {
-    pub fn new(nvs_partition: EspDefaultNvsPartition) -> Result<Arc<Self>, anyhow::Error> {
-        let nvs = EspNvs::new(nvs_partition, "device_setup", true)?;
+    let mut wifi = BlockingWifi::wrap(
+        EspWifi::new(
+            peripherals.modem,
+            sys_loop.clone(),
+            Some(nvs_partition.clone()),
+        )?,
+        sys_loop,
+    )?;
 
-        let mut setup = Self {
-            nvs,
-            state: Mutex::new(State {
-                data: DeviceSetupData::default(),
-                authenticated: false,
-            }),
+    let ble_device = BLEDevice::take();
+    let ble_advertising = ble_device.get_advertising();
+    let server = ble_device.get_server();
+    let setup_clone = Arc::clone(&setup);
+
+    server.on_connect(move |_server, _desc| {
+        info!("BLE Central Connected");
+    });
+
+    server.on_disconnect(move |_desc, _reason| {
+        info!("BLE Central Disconnected");
+        setup_clone.reset_authentication();
+    });
+
+    let service_uuid = esp32_nimble::uuid128!(FIRMWARE_SERVICE_UUID);
+    let rx_uuid = esp32_nimble::uuid128!(FIRMWARE_RX_CHARACTERISTIC_UUID);
+    let tx_uuid = esp32_nimble::uuid128!(FIRMWARE_TX_CHARACTERISTIC_UUID);
+
+    let service = server.create_service(service_uuid);
+    let rx_char = service
+        .lock()
+        .create_characteristic(rx_uuid, NimbleProperties::WRITE);
+    let tx_char = service.lock().create_characteristic(
+        tx_uuid,
+        NimbleProperties::READ | NimbleProperties::NOTIFY,
+    );
+
+    let event_tx_ble = event_tx.clone();
+    rx_char.lock().on_write(move |args| {
+        let payload = args.recv_data();
+        let _ = event_tx_ble.send(SystemEvent::BleRequest(payload.to_vec()));
+    });
+
+    let uart1 = peripherals.uart1;
+    let serial_tx_pin = peripherals.pins.gpio17;
+    let serial_rx_pin = peripherals.pins.gpio16;
+    let serial_setup = Arc::clone(&setup);
+    let event_tx_serial = event_tx.clone();
+
+    std::thread::spawn(move || {
+        let config = UartConfig::default().baudrate(Hertz(SERIAL_BAUD_RATE));
+        let uart = match UartDriver::new(
+            uart1,
+            serial_tx_pin,
+            serial_rx_pin,
+            Option::<AnyIOPin>::None,
+            Option::<AnyIOPin>::None,
+            &config,
+        ) {
+            Ok(driver) => driver,
+            Err(error) => {
+                error!("Failed to initialize serial transport: {:?}", error);
+                return;
+            }
         };
 
-        setup.load_from_nvs();
-        Ok(Arc::new(setup))
-    }
+        loop {
+            let mut length_buf = [0u8; 2];
+            if read_exact_timeout(&uart, &mut length_buf, 5000).is_err() {
+                continue;
+            }
 
-    fn load_from_nvs(&mut self) {
-        let mut state = self.state.lock().unwrap();
-        let mut buf = [0u8; 128];
-        state.data.configured = self.nvs.get_u8("configured").unwrap_or(Some(0)) == Some(1);
+            let payload_len = u16::from_le_bytes(length_buf) as usize;
+            if payload_len == 0 || payload_len > 512 {
+                continue;
+            }
 
-        state.data.device_name = self
-            .nvs
-            .get_str("name", &mut buf)
-            .ok()
-            .flatten()
-            .unwrap_or(DEFAULT_DEVICE_NAME)
-            .to_string();
+            let mut payload = vec![0u8; payload_len];
+            if read_exact_timeout(&uart, &mut payload, 1000).is_err() {
+                continue;
+            }
 
-        state.data.wifi_ssid = self
-            .nvs
-            .get_str("wifi_ssid", &mut buf)
-            .ok()
-            .flatten()
-            .unwrap_or_default()
-            .to_string();
-
-        state.data.wifi_password = self
-            .nvs
-            .get_str("wifi_pass", &mut buf)
-            .ok()
-            .flatten()
-            .unwrap_or_default()
-            .to_string();
-
-        state.data.device_password = self
-            .nvs
-            .get_str("dev_pass", &mut buf)
-            .ok()
-            .flatten()
-            .unwrap_or_default()
-            .to_string();
-
-        state.data.auth_required = self.nvs.get_u8("auth_required").unwrap_or(Some(1)) == Some(1);
-        state.data.wifi_required = self.nvs.get_u8("wifi_required").unwrap_or(Some(1)) == Some(1);
-
-        if state.data.configured
-            && ((state.data.wifi_required && state.data.wifi_ssid.is_empty())
-                || (state.data.auth_required && state.data.device_password.is_empty()))
-        {
-            warn!("Incomplete stored configuration; falling back to unconfigured");
-            state.data.configured = false;
+            let response = serial_setup.process_serial_request(&payload);
+            let _ = write_frame(&uart, &response);
+            let _ = event_tx_serial.send(SystemEvent::ConfigurationUpdated);
         }
+    });
 
-        info!(
-            "Loaded setup: configured={}, name='{}'",
-            state.data.configured, state.data.device_name
-        );
-    }
+    update_advertising(&setup, &service_uuid, &ble_advertising)?;
 
-    pub fn save_to_nvs_internal(
-        nvs: &EspNvs<NvsDefault>,
-        data: &DeviceSetupData,
-    ) -> Result<(), anyhow::Error> {
-        nvs.set_u8("configured", if data.configured { 1 } else { 0 })?;
-        nvs.set_str("name", &data.device_name)?;
-        nvs.set_str("wifi_ssid", &data.wifi_ssid)?;
-        nvs.set_str("wifi_pass", &data.wifi_password)?;
-        nvs.set_str("dev_pass", &data.device_password)?;
-        nvs.set_u8("auth_required", if data.auth_required { 1 } else { 0 })?;
-        nvs.set_u8("wifi_required", if data.wifi_required { 1 } else { 0 })?;
-        info!("Setup persisted to NVS");
-        Ok(())
-    }
+    let setup_worker = Arc::clone(&setup);
+    let tx_char_writer = Arc::clone(&tx_char);
+    let event_tx_worker = event_tx.clone();
 
-    pub fn reset_authentication(&self) {
-        let mut state = self.state.lock().unwrap();
-        state.authenticated = false;
-        info!("BLE authentication reset");
-    }
-
-    pub fn device_name_for_advertising(&self) -> String {
-        let state = self.state.lock().unwrap();
-        if !state.data.device_name.is_empty() {
-            state.data.device_name.clone()
-        } else {
-            DEFAULT_DEVICE_NAME.to_string()
+    std::thread::spawn(move || {
+        while let Ok(event) = event_rx.recv() {
+            match event {
+                SystemEvent::BleRequest(payload) => {
+                    let response = setup_worker.process_request(&payload);
+                    if !response.is_empty() {
+                        tx_char_writer.lock().set_value(&response).notify();
+                    }
+                    let _ = event_tx_worker.send(SystemEvent::ConfigurationUpdated);
+                }
+                SystemEvent::ConfigurationUpdated => {
+                    let _ = update_advertising(&setup_worker, &service_uuid, &ble_advertising);
+                    let (ssid, pass) = setup_worker.wifi_credentials();
+                    if !ssid.is_empty() {
+                        let _ = connect_wifi(&mut wifi, &ssid, &pass);
+                    }
+                }
+            }
         }
-    }
+    });
 
-    pub fn process_request(&self, data: &[u8]) -> Vec<u8> {
-        self.process_request_for_transport(data, false)
-    }
+    let event_tx_init = event_tx.clone();
+    let _ = event_tx_init.send(SystemEvent::ConfigurationUpdated);
 
-    pub fn process_serial_request(&self, data: &[u8]) -> Vec<u8> {
-        self.process_request_for_transport(data, true)
-    }
+    let i2c0 = peripherals.i2c0;
+    let sda = peripherals.pins.gpio21;
+    let scl = peripherals.pins.gpio22;
 
-    fn process_request_for_transport(&self, data: &[u8], bypass_auth: bool) -> Vec<u8> {
-        if data.is_empty() {
-            return vec![RESPONSE_ERROR];
+    std::thread::spawn(move || {
+        let i2c_config = I2cConfig::new().baudrate(Hertz(400_000).into());
+        let mut driver_option = I2cDriver::new(i2c0, sda, scl, &i2c_config).ok();
+        let mut backoff_secs = 2;
+
+        loop {
+            if let Some(ref driver) = driver_option {
+                match Bme280::from_i2c0(driver, bme280_multibus::Address::SdoGnd) {
+                    Ok(mut sensor) => {
+                        if sensor.settings(&bme280_multibus::Settings::default()).is_ok() {
+                            info!("BME280 initialized dynamic rediscovery");
+                            backoff_secs = 2;
+                            loop {
+                                match sensor.sample() {
+                                    Ok(m) => {
+                                        info!(
+                                            "Sensor -> Temp: {:.2}°C, Hum: {:.2}%, Pres: {:.2} hPa",
+                                            m.temperature,
+                                            m.humidity,
+                                            m.pressure / 100.0
+                                        );
+                                    }
+                                    Err(_) => {
+                                        warn!("Sensor sample failed, forcing rediscovery");
+                                        break;
+                                    }
+                                }
+                                std::thread::sleep(Duration::from_secs(2));
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        warn!("Sensor not detected on bus");
+                    }
+                }
+            } else {
+                driver_option = I2cDriver::new(i2c0, sda, scl, &i2c_config).ok();
+            }
+
+            std::thread::sleep(Duration::from_secs(backoff_secs));
+            backoff_secs = (backoff_secs * 2).min(30);
         }
+    });
 
-        let mut state = self.state.lock().unwrap();
-        let command = data[0];
-        let mut cursor = 1;
+    loop {
+        std::thread::sleep(Duration::from_secs(10));
+    }
+}
 
-        match command {
-            COMMAND_GET_STATUS => {
-                let name_bytes = state.data.device_name.as_bytes();
-                let name_len = name_bytes.len().min(255) as u8;
-                let mut resp = vec![
-                    RESPONSE_STATUS,
-                    if state.data.configured { 1 } else { 0 },
-                    if !state.data.configured
-                        || bypass_auth
-                        || !state.data.auth_required
-                        || state.authenticated
-                    {
-                        1
-                    } else {
-                        0
-                    },
-                    if state.data.auth_required { 1 } else { 0 },
-                    if state.data.wifi_required { 1 } else { 0 },
-                    if !state.data.wifi_ssid.is_empty() {
-                        1
-                    } else {
-                        0
-                    },
-                    name_len,
-                ];
-                resp.extend_from_slice(&name_bytes[..name_len as usize]);
-                resp
-            }
-            COMMAND_AUTHENTICATE => {
-                if bypass_auth {
-                    state.authenticated = false;
-                    return vec![RESPONSE_AUTH_OK];
-                }
+fn update_advertising(
+    setup: &DeviceSetup,
+    service_uuid: &esp32_nimble::UUID,
+    adv_handle: &Arc<Mutex<esp32_nimble::BLEAdvertising>>,
+) -> anyhow::Result<()> {
+    let dev_name = setup.device_name_for_advertising();
+    esp32_nimble::BLEDevice::set_device_name(&dev_name)?;
 
-                let pass = match Self::read_field(data, &mut cursor) {
-                    Some(p) => p,
-                    None => return vec![RESPONSE_ERROR],
-                };
+    let mut adv_data = BLEAdvertisementData::new();
+    adv_data.name(&dev_name);
+    adv_data.add_service_uuid(*service_uuid);
 
-                if !state.data.configured {
-                    state.authenticated = true;
-                    return vec![RESPONSE_AUTH_OK];
-                }
+    let setup_complete_flag = if setup.is_configured() { 1u8 } else { 0u8 };
+    let mut mfg_data = Vec::new();
+    mfg_data.extend_from_slice(&FIRMWARE_MANUFACTURER_ID.to_le_bytes());
+    mfg_data.push(setup_complete_flag);
 
-                if !state.data.auth_required {
-                    state.authenticated = true;
-                    return vec![RESPONSE_AUTH_OK];
-                }
+    adv_data.manufacturer_data(&mfg_data);
 
-                let verified =
-                    !state.data.device_password.is_empty() && pass == state.data.device_password;
-                state.authenticated = verified;
-                vec![if verified {
-                    RESPONSE_AUTH_OK
-                } else {
-                    RESPONSE_AUTH_FAILED
-                }]
-            }
-            COMMAND_APPLY_SETUP => {
-                if !bypass_auth && state.data.configured && !state.authenticated {
-                    return vec![RESPONSE_AUTH_FAILED];
-                }
+    let mut adv = adv_handle.lock();
+    adv.stop()?;
+    adv.set_data(&mut adv_data)?;
+    adv.start()?;
+    Ok(())
+}
 
-                let dev_name = Self::read_field(data, &mut cursor).unwrap_or_default();
-                let wifi_ssid = match Self::read_field(data, &mut cursor) {
-                    Some(s) => s,
-                    None => return vec![RESPONSE_SETUP_FAILED],
-                };
-                let wifi_pass = Self::read_field(data, &mut cursor).unwrap_or_default();
-                let dev_pass = Self::read_field(data, &mut cursor).unwrap_or_default();
-                let auth_required = data
-                    .get(cursor)
-                    .copied()
-                    .map(|value| value != 0)
-                    .unwrap_or(true);
-                let skip_wifi = data
-                    .get(cursor + 1)
-                    .copied()
-                    .map(|value| value != 0)
-                    .unwrap_or(false);
-
-                if auth_required && dev_pass.is_empty() {
-                    return vec![RESPONSE_SETUP_FAILED];
-                }
-
-                if !skip_wifi && wifi_ssid.is_empty() {
-                    return vec![RESPONSE_SETUP_FAILED];
-                }
-
-                state.data.wifi_ssid = wifi_ssid;
-                state.data.wifi_password = wifi_pass;
-                state.data.device_password = dev_pass;
-                state.data.auth_required = auth_required;
-                state.data.wifi_required = !skip_wifi;
-                if !dev_name.is_empty() {
-                    state.data.device_name = dev_name;
-                }
-                state.data.configured = true;
-                state.authenticated = !bypass_auth;
-
-                if Self::save_to_nvs_internal(&self.nvs, &state.data).is_ok() {
-                    vec![RESPONSE_SETUP_OK]
-                } else {
-                    vec![RESPONSE_SETUP_FAILED]
-                }
-            }
-            COMMAND_RESTART => {
-                if !bypass_auth && state.data.configured && !state.authenticated {
-                    return vec![RESPONSE_AUTH_FAILED];
-                }
-                info!("Executing restart via BLE command");
-                std::thread::spawn(|| {
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                    esp_idf_svc::hal::reset::restart();
-                });
-                vec![RESPONSE_RESTART_OK]
-            }
-            COMMAND_FACTORY_RESET => {
-                if !bypass_auth && state.data.configured && !state.authenticated {
-                    return vec![RESPONSE_AUTH_FAILED];
-                }
-
-                state.data = DeviceSetupData::default();
-                state.authenticated = false;
-
-                if Self::save_to_nvs_internal(&self.nvs, &state.data).is_ok() {
-                    info!("Factory reset complete");
-                    vec![RESPONSE_FACTORY_RESET_OK]
-                } else {
-                    vec![RESPONSE_ERROR]
-                }
-            }
-            COMMAND_CHANGE_PASSWORD => {
-                if !bypass_auth && state.data.configured && !state.authenticated {
-                    return vec![RESPONSE_AUTH_FAILED];
-                }
-
-                let current_pass = match Self::read_field(data, &mut cursor) {
-                    Some(p) => p,
-                    None => return vec![RESPONSE_ERROR],
-                };
-                let new_pass = match Self::read_field(data, &mut cursor) {
-                    Some(p) if !p.is_empty() => p,
-                    _ => return vec![RESPONSE_ERROR],
-                };
-
-                if !bypass_auth
-                    && state.data.configured
-                    && state.data.auth_required
-                    && current_pass != state.data.device_password
-                {
-                    return vec![RESPONSE_AUTH_FAILED];
-                }
-
-                state.data.device_password = new_pass;
-                state.data.auth_required = true;
-                if Self::save_to_nvs_internal(&self.nvs, &state.data).is_ok() {
-                    vec![RESPONSE_CHANGE_PASSWORD_OK]
-                } else {
-                    vec![RESPONSE_ERROR]
-                }
-            }
-            COMMAND_UPDATE_WIFI => {
-                if !bypass_auth && state.data.configured && !state.authenticated {
-                    return vec![RESPONSE_AUTH_FAILED];
-                }
-
-                let wifi_ssid = match Self::read_field(data, &mut cursor) {
-                    Some(s) if !s.is_empty() => s,
-                    _ => return vec![RESPONSE_ERROR],
-                };
-                let wifi_pass = Self::read_field(data, &mut cursor).unwrap_or_default();
-
-                state.data.wifi_ssid = wifi_ssid;
-                state.data.wifi_password = wifi_pass;
-                state.data.wifi_required = true;
-
-                if Self::save_to_nvs_internal(&self.nvs, &state.data).is_ok() {
-                    vec![RESPONSE_UPDATE_WIFI_OK]
-                } else {
-                    vec![RESPONSE_ERROR]
-                }
-            }
-            _ => vec![RESPONSE_ERROR],
-        }
+fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>, ssid: &str, pass: &str) -> anyhow::Result<()> {
+    info!("Attempting WiFi connection to SSID: {}", ssid);
+    let mut auth = AuthMethod::WPA2Personal;
+    if pass.is_empty() {
+        auth = AuthMethod::None;
     }
 
-    fn read_field(data: &[u8], cursor: &mut usize) -> Option<String> {
-        if *cursor >= data.len() {
-            return None;
+    let config = Configuration::Client(ClientConfiguration {
+        ssid: ssid.try_into().unwrap_or_default(),
+        password: pass.try_into().unwrap_or_default(),
+        auth_method: auth,
+        ..Default::default()
+    });
+
+    wifi.set_configuration(&config)?;
+    wifi.start()?;
+    wifi.connect()?;
+    wifi.wait_netif_up()?;
+    info!("WiFi connected successfully");
+    Ok(())
+}
+
+fn read_exact_timeout(uart: &UartDriver<'_>, buf: &mut [u8], timeout_ms: u32) -> anyhow::Result<()> {
+    let mut offset = 0;
+    let ticks = esp_idf_svc::hal::delay::TickType::from_millis(timeout_ms).ticks();
+
+    while offset < buf.len() {
+        let read = uart.read(&mut buf[offset..], ticks)?;
+        if read == 0 {
+            anyhow::bail!("Read timeout");
         }
-        let len = data[*cursor] as usize;
-        *cursor += 1;
-        if *cursor + len > data.len() {
-            return None;
-        }
-        let val = std::str::from_utf8(&data[*cursor..*cursor + len])
-            .ok()?
-            .to_string();
-        *cursor += len;
-        Some(val)
+        offset += read;
     }
+    Ok(())
+}
+
+fn write_frame(uart: &UartDriver<'_>, payload: &[u8]) -> anyhow::Result<()> {
+    let len = u16::try_from(payload.len())?;
+    let mut frame = Vec::with_capacity(2 + payload.len());
+    frame.extend_from_slice(&len.to_le_bytes());
+    frame.extend_from_slice(payload);
+
+    let mut written = 0;
+    while written < frame.len() {
+        written += uart.write(&frame[written..])?;
+    }
+
+    Ok(())
 }

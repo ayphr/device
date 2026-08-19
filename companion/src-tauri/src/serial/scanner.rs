@@ -8,17 +8,19 @@ use super::protocol::query_status;
 use super::state::{SerialDeviceSnapshot, SerialDeviceStore};
 
 pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Result<(), String> {
+    let mut seen_devices: HashMap<String, (SerialDeviceSnapshot, Instant)> = HashMap::new();
+
     loop {
         let now = Instant::now();
         let ports = serialport::available_ports().map_err(|error| error.to_string())?;
-        let mut seen_devices: HashMap<String, (SerialDeviceSnapshot, Instant)> = HashMap::new();
 
         for port in ports {
             let port_name = port.port_name.clone();
+            let port_name_task = port_name.clone();
 
-            let status = match query_status(&port_name) {
-                Ok(status) => status,
-                Err(_) => continue,
+            let status = match tokio::task::spawn_blocking(move || query_status(&port_name_task)).await {
+                Ok(Ok(status)) => status,
+                _ => continue,
             };
 
             let transport_label = match port.port_type {
