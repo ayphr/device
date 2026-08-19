@@ -2,10 +2,30 @@ use serialport::SerialPortType;
 use std::collections::HashMap;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
+use tracing::debug;
 
 use super::constants::{DEVICE_RETENTION_WINDOW, SCAN_INTERVAL};
 use super::protocol::query_status;
 use super::state::{SerialDeviceSnapshot, SerialDeviceStore};
+
+const NON_DEVICE_PORT_PATTERNS: &[&str] = &[
+    "Bluetooth",
+    "bluetooth",
+    "SOC",
+    "soc",
+    "debug-console",
+    "debug_console",
+    "AirPods",
+    "WCH",
+    "Model",
+];
+
+fn is_likely_non_device_port(port_name: &str) -> bool {
+    let name = port_name.to_lowercase();
+    NON_DEVICE_PORT_PATTERNS
+        .iter()
+        .any(|pattern| name.contains(&pattern.to_lowercase()))
+}
 
 pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Result<(), String> {
     loop {
@@ -15,6 +35,11 @@ pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Re
 
         for port in ports {
             let port_name = port.port_name.clone();
+
+            if is_likely_non_device_port(&port_name) {
+                debug!("[serial] skipping non-device port: {}", port_name);
+                continue;
+            }
 
             let status = match query_status(&port_name) {
                 Ok(status) => status,

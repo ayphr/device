@@ -68,6 +68,7 @@ dependencies = [
  "esp-idf-svc",
  "esp-idf-sys",
  "esp32-nimble",
+ "heapless 0.9.3",
  "log",
 ]
 

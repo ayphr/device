@@ -1,24 +1,24 @@
-mod device_setup;
+mod ble;
+mod command_processor;
+mod config;
+mod serial;
+mod wifi;
 
-use crate::device_setup::DeviceSetup;
+use crate::config::DeviceSetup;
 use bme280_multibus::Bme280;
-use esp_idf_svc::hal::delay::BLOCK;
-use esp_idf_svc::hal::gpio::AnyIOPin;
-use esp32_nimble::{BLEDevice, NimbleProperties, BLEAdvertisementData};
 use esp_idf_svc::eventloop::EspSystemEventLoop;
+use esp_idf_svc::hal::gpio::AnyIOPin;
 use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver};
-use esp_idf_svc::hal::peripherals::Peripherals;
-use esp_idf_svc::hal::units::Hertz;
 use esp_idf_svc::hal::uart::{config::Config as UartConfig, UartDriver};
+use esp_idf_svc::hal::units::Hertz;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
-use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
+use esp_idf_svc::wifi::BlockingWifi;
 use log::{error, info, warn};
-use std::sync::Arc;
 use std::time::Duration;
 
-use ayphr_protocol::{FIRMWARE_MANUFACTURER_ID, FIRMWARE_RX_CHARACTERISTIC_UUID, FIRMWARE_SERVICE_UUID, FIRMWARE_TX_CHARACTERISTIC_UUID};
-
 const SERIAL_BAUD_RATE: u32 = 115_200;
+const I2C_FREQ_HZ: u32 = 400_000;
+const SENSOR_SAMPLE_INTERVAL_SECS: u64 = 2;
 
 fn main() -> anyhow::Result<()> {
     esp_idf_svc::sys::link_patches();
@@ -26,17 +26,14 @@ fn main() -> anyhow::Result<()> {
 
     info!("Booting firmware...");
 
-    let peripherals = Peripherals::take()?;
+    let peripherals = esp_idf_svc::hal::peripherals::Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs_partition = EspDefaultNvsPartition::take()?;
 
     let setup = DeviceSetup::new(nvs_partition.clone())?;
-    let uart1 = peripherals.uart1;
-    let serial_tx = peripherals.pins.gpio17;
-    let serial_rx = peripherals.pins.gpio16;
 
-    let _wifi = BlockingWifi::wrap(
-        EspWifi::new(
+    let mut _wifi = BlockingWifi::wrap(
+        esp_idf_svc::wifi::EspWifi::new(
             peripherals.modem,
             sys_loop.clone(),
             Some(nvs_partition.clone()),
@@ -44,49 +41,15 @@ fn main() -> anyhow::Result<()> {
         sys_loop,
     )?;
 
-    let ble_device = BLEDevice::take();
-    let ble_advertising = ble_device.get_advertising();
+    ble::init(setup.clone());
 
-    let server = ble_device.get_server();
-    let setup_clone = Arc::clone(&setup);
+    let (ssid, password) = setup.load_wifi_credentials();
+    wifi::connect(&mut _wifi, &ssid, &password);
 
-    server.on_connect(move |_server, _desc| {
-        info!("BLE Central Connected");
-    });
-
-    server.on_disconnect(move |_desc, _reason| {
-        info!("BLE Central Disconnected");
-        setup_clone.reset_authentication();
-    });
-
-    let service_uuid = esp32_nimble::uuid128!(FIRMWARE_SERVICE_UUID);
-    let rx_uuid = esp32_nimble::uuid128!(FIRMWARE_RX_CHARACTERISTIC_UUID);
-    let tx_uuid = esp32_nimble::uuid128!(FIRMWARE_TX_CHARACTERISTIC_UUID);
-
-    let service = server.create_service(service_uuid);
-    let rx_char = service
-        .lock()
-        .create_characteristic(rx_uuid, NimbleProperties::WRITE);
-    let tx_char = service.lock().create_characteristic(
-        tx_uuid,
-        NimbleProperties::READ | NimbleProperties::NOTIFY,
-    );
-
-    let setup_request_handler = Arc::clone(&setup);
-    let tx_char_writer = Arc::clone(&tx_char);
-
-    rx_char.lock().on_write(move |args| {
-        let payload = args.recv_data();
-        info!("Received BLE setup request bytes={}", payload.len());
-
-        let response = setup_request_handler.process_request(payload);
-        if !response.is_empty() {
-            info!("Sending BLE setup response bytes={}", response.len());
-            tx_char_writer.lock().set_value(&response).notify();
-        }
-    });
-
-    let serial_setup = Arc::clone(&setup);
+    let uart1 = peripherals.uart1;
+    let serial_tx = peripherals.pins.gpio17;
+    let serial_rx = peripherals.pins.gpio16;
+    let serial_setup = setup.clone();
     std::thread::spawn(move || {
         let config = UartConfig::default().baudrate(Hertz(SERIAL_BAUD_RATE));
         let uart = match UartDriver::new(
@@ -104,77 +67,29 @@ fn main() -> anyhow::Result<()> {
             }
         };
 
-        loop {
-            let mut length_buf = [0u8; 2];
-            if let Err(error) = read_exact(&uart, &mut length_buf) {
-                warn!("Serial frame length read failed: {:?}", error);
-                std::thread::sleep(Duration::from_millis(100));
-                continue;
-            }
-
-            let payload_len = u16::from_le_bytes(length_buf) as usize;
-            if payload_len == 0 {
-                continue;
-            }
-
-            let mut payload = vec![0u8; payload_len];
-            if let Err(error) = read_exact(&uart, &mut payload) {
-                warn!("Serial frame payload read failed: {:?}", error);
-                std::thread::sleep(Duration::from_millis(100));
-                continue;
-            }
-
-            info!("Received serial setup request bytes={}", payload.len());
-            let response = serial_setup.process_serial_request(&payload);
-
-            if let Err(error) = write_frame(&uart, &response) {
-                warn!("Failed to write serial response: {:?}", error);
-            }
-        }
+        info!("Serial transport ready on UART1 at {} baud", SERIAL_BAUD_RATE);
+        serial::run_loop(&uart, &serial_setup);
     });
 
-    let dev_name = setup.device_name_for_advertising();
-    esp32_nimble::BLEDevice::set_device_name(&dev_name).unwrap();
-
-    let mut adv_data = BLEAdvertisementData::new();
-    adv_data.name(&dev_name);
-    adv_data.add_service_uuid(service_uuid);
-
-    let setup_complete_flag = if setup.is_configured() { 1u8 } else { 0u8 };
-    let manufacturer_data_payload = vec![setup_complete_flag];
-
-    let mut mfg_data = Vec::new();
-    mfg_data.extend_from_slice(&FIRMWARE_MANUFACTURER_ID.to_le_bytes());
-    mfg_data.extend_from_slice(&manufacturer_data_payload);
-
-    adv_data.manufacturer_data(&mfg_data);
-
-    ble_advertising.lock().set_data(&mut adv_data)?;
-    ble_advertising.lock().start()?;
-
-    info!(
-        "BLE advertising started with name='{}', Service UUID='{}', Manufacturer ID=0x{:04X}",
-        dev_name, service_uuid, FIRMWARE_MANUFACTURER_ID
-    );
-
-    let i2c_config = I2cConfig::new().baudrate(Hertz(400_000).into());
+    let i2c_config = I2cConfig::new().baudrate(Hertz(I2C_FREQ_HZ).into());
     let i2c_driver = I2cDriver::new(
         peripherals.i2c0,
-        peripherals.pins.gpio21, // SDA
-        peripherals.pins.gpio22, // SCL
+        peripherals.pins.gpio21,
+        peripherals.pins.gpio22,
         &i2c_config,
     )?;
 
     let mut bme280 = match Bme280::from_i2c0(i2c_driver, bme280_multibus::Address::SdoGnd) {
-        Ok(mut sensor) => {
-            if let Err(e) = sensor.settings(&bme280_multibus::Settings::default()) {
-                error!("Failed to configure BME280 sensor: {:?}", e);
-                None
-            } else {
-                info!("BME280 sensor successfully initialized over I2C");
+        Ok(mut sensor) => match sensor.settings(&bme280_multibus::Settings::default()) {
+            Ok(()) => {
+                info!("BME280 sensor initialized over I2C");
                 Some(sensor)
             }
-        }
+            Err(e) => {
+                error!("Failed to configure BME280 sensor: {:?}", e);
+                None
+            }
+        },
         Err(e) => {
             warn!("BME280 sensor not found on I2C bus: {:?}", e);
             None
@@ -186,45 +101,18 @@ fn main() -> anyhow::Result<()> {
             match sensor.sample() {
                 Ok(measurements) => {
                     info!(
-                        "Sensor Readings -> Temp: {:.2}°C, Humidity: {:.2}%, Pressure: {:.2} hPa",
+                        "Sensor -> Temp: {:.2}°C, Humidity: {:.2}%, Pressure: {:.2} hPa",
                         measurements.temperature,
                         measurements.humidity,
                         measurements.pressure / 100.0
                     );
                 }
                 Err(_) => {
-                    warn!("Failed to read measurement sample from BME280 sensor");
+                    warn!("Failed to read BME280 sensor sample");
                 }
             }
         }
 
-        std::thread::sleep(Duration::from_secs(2));
+        std::thread::sleep(Duration::from_secs(SENSOR_SAMPLE_INTERVAL_SECS));
     }
-}
-
-fn read_exact(uart: &UartDriver<'_>, mut buf: &mut [u8]) -> anyhow::Result<()> {
-    while !buf.is_empty() {
-        let read = uart.read(buf, BLOCK)?;
-        if read == 0 {
-            continue;
-        }
-        let tmp = buf;
-        buf = &mut tmp[read..];
-    }
-
-    Ok(())
-}
-
-fn write_frame(uart: &UartDriver<'_>, payload: &[u8]) -> anyhow::Result<()> {
-    let len = u16::try_from(payload.len())?;
-    let mut frame = Vec::with_capacity(2 + payload.len());
-    frame.extend_from_slice(&len.to_le_bytes());
-    frame.extend_from_slice(payload);
-
-    let mut written = 0;
-    while written < frame.len() {
-        written += uart.write(&frame[written..])?;
-    }
-
-    Ok(())
 }

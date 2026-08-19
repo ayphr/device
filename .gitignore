@@ -10,5 +10,3 @@
 *.njsproj
 *.sln
 *.sw?
-
-/target
