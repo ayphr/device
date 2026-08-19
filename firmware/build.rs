@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn main() {
     embuild::espidf::sysenv::output();
