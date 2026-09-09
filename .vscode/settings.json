@@ -11,5 +11,5 @@
   "rust-analyzer.check.command": "clippy",
   "rust-analyzer.check.extraArgs": ["--workspace"],
 
-  "rust-analyzer.cargo.target": "riscv32imc-unknown-none-elf",
+  "rust-analyzer.cargo.target": "riscv32imc-esp-espidf",
 }

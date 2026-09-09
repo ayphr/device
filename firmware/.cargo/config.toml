@@ -1,7 +1,7 @@
 [build]
-target = "xtensa-esp32-espidf"
+target = "riscv32imc-esp-espidf"
 
-[target.xtensa-esp32-espidf]
+[target.riscv32imc-esp-espidf]
 linker = "ldproxy"
 runner = "espflash flash --monitor"
 
@@ -11,4 +11,4 @@ build-std = ["std", "panic_abort"]
 [env]
 ESP_IDF_SYS_ROOT_CRATE = { value = "." }
 ESP_IDF_VERSION = "v5.2.1"
-MCU = "esp32"
+MCU = "esp32c3"

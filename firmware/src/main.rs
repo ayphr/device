@@ -50,8 +50,8 @@ fn main() -> anyhow::Result<()> {
     wifi::connect(&mut _wifi, &ssid, &password);
 
     let uart1 = peripherals.uart1;
-    let serial_tx = peripherals.pins.gpio17;
-    let serial_rx = peripherals.pins.gpio16;
+    let serial_tx = peripherals.pins.gpio5;
+    let serial_rx = peripherals.pins.gpio4;
     let serial_setup = setup.clone();
     std::thread::spawn(move || {
         let config = UartConfig::default().baudrate(Hertz(SERIAL_BAUD_RATE));
@@ -77,8 +77,8 @@ fn main() -> anyhow::Result<()> {
     let i2c_config = I2cConfig::new().baudrate(Hertz(I2C_FREQ_HZ).into());
     let i2c_driver = I2cDriver::new(
         peripherals.i2c0,
-        peripherals.pins.gpio21,
-        peripherals.pins.gpio22,
+        peripherals.pins.gpio0,
+        peripherals.pins.gpio1,
         &i2c_config,
     )?;
 

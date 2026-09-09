@@ -33,21 +33,29 @@ jobs:
             ~/.cargo/git/
             ~/.rustup/
             firmware/target/
-          key: ${{ runner.os }}-esp32-cargo-${{ hashFiles('firmware/Cargo.lock') }}
+          key: ${{ runner.os }}-esp32c3-cargo-${{ hashFiles('firmware/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-esp32-cargo-
+            ${{ runner.os }}-esp32c3-cargo-
 
       - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build libclang-dev dfu-util python3 python3-pip
 
-      - name: Setup Xtensa Rust Toolchain
-        uses: esp-rs/xtensa-toolchain@v1.5
-        with:
-          default: true
-          buildtargets: "esp32"
-          ldproxy: true
+      - name: Setup Espressif Rust Toolchain (RISC-V)
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cargo install espup
+          cargo install ldproxy
+          espup install -t esp32c3
+          rustup default esp
+          set -a
+          . "$HOME/export-esp.sh"
+          set +a
+          echo "PATH=$PATH" >> "$GITHUB_ENV"
+          echo "IDF_TOOLS_PATH=$IDF_TOOLS_PATH" >> "$GITHUB_ENV"
 
       - name: Sync package version to release tag
         shell: bash
@@ -75,7 +83,7 @@ jobs:
         continue-on-error: true
 
       - name: Build Firmware (Release)
-        run: cargo build --release --target xtensa-esp32-espidf
+        run: cargo build --release --target riscv32imc-esp-espidf
         working-directory: ./firmware
 
       - name: Generate version.json
@@ -87,7 +95,7 @@ jobs:
           VERSION="${RELEASE_TAG#firmware-v}"
           BINARY_NAME="ayphr-firmware"
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/${BINARY_NAME}"
-          SHA256=$(sha256sum "firmware/target/xtensa-esp32-espidf/release/${BINARY_NAME}" | cut -d' ' -f1)
+          SHA256=$(sha256sum "firmware/target/riscv32imc-esp-espidf/release/${BINARY_NAME}" | cut -d' ' -f1)
 
           cat > version.json <<EOF
           {
@@ -105,9 +113,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            firmware/target/xtensa-esp32-espidf/release/*.bin
-            firmware/target/xtensa-esp32-espidf/release/ayphr-firmware
-            firmware/target/xtensa-esp32-espidf/release/ayphr-firmware.d
+            firmware/target/riscv32imc-esp-espidf/release/*.bin
+            firmware/target/riscv32imc-esp-espidf/release/ayphr-firmware
+            firmware/target/riscv32imc-esp-espidf/release/ayphr-firmware.d
             version.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

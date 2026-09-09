@@ -1,26 +1,26 @@
 # Geo Gen1 Firmware
 
-ESP32 firmware for the Geo device using ESP-IDF and CMake.
+ESP32-C3 (RISC-V) firmware for the Geo device.
 
 ## Prerequisites
 
 - Rust installed
 - ESPUP installed
   - `cargo install espup`
-  - `espup install`
+  - `espup install -t esp32c3`
 
 ## Getting Started
 
 From this folder:
 
 ```bash
-cargo +esp build --release --target xtensa-esp32-espidf
+cargo +esp build --release --target riscv32imc-esp-espidf
 ```
 
 ## Flash and Monitor
 
 ```bash
-cargo espflash flash --release --target xtensa-esp32-espidf --monitor
+cargo espflash flash --release --target riscv32imc-esp-espidf --monitor
 ```
 
 > Note: This also rebuilds the firmware, but does not run `cargo clean`
