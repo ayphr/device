@@ -16,6 +16,16 @@
       "problemMatcher": ["$rustc"]
     },
     {
+      "label": "Build Firmware (Classic ESP32/Xtensa)",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["+esp", "build", "--release", "--target", "xtensa-esp32-espidf"],
+      "options": {
+        "cwd": "${workspaceFolder}/firmware"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
       "label": "Build Firmware",
       "type": "shell",
       "command": "cargo",
@@ -38,6 +48,23 @@
         "espflash",
         "flash",
         "--monitor"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/firmware"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Flash Firmware (Classic ESP32/Xtensa)",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "+esp",
+        "espflash",
+        "flash",
+        "--monitor",
+        "--target",
+        "xtensa-esp32-espidf"
       ],
       "options": {
         "cwd": "${workspaceFolder}/firmware"
