@@ -86,8 +86,8 @@ jobs:
         run: |
           VERSION="${RELEASE_TAG#firmware-v}"
           BINARY_NAME="ayphr-firmware"
-          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/${BINARY_NAME}.bin"
-          SHA256=$(sha256sum "firmware/target/xtensa-esp32-espidf/release/${BINARY_NAME}.bin" | cut -d' ' -f1)
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/${BINARY_NAME}"
+          SHA256=$(sha256sum "firmware/target/xtensa-esp32-espidf/release/${BINARY_NAME}" | cut -d' ' -f1)
 
           cat > version.json <<EOF
           {
