@@ -49,7 +49,7 @@ jobs:
         run: |
           cargo install espup
           cargo install ldproxy
-          rustup toolchain install nightly-2026-04-15 --profile minimal --component rust-src
+          rustup toolchain install nightly-2026-04-15 --profile minimal --component rust-src --component rustfmt
           espup install -t esp32c3
           rustup toolchain link esp "$(rustup which --toolchain nightly-2026-04-15 rustc | xargs dirname | xargs dirname)"
           rustup default esp
