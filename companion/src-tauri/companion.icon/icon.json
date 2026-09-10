@@ -30,8 +30,8 @@
             }
           ],
           "glass" : true,
-          "image-name" : "hayden other thing.svg",
-          "name" : "hayden other thing",
+          "image-name" : "logo.svg",
+          "name" : "logo",
           "opacity-specializations" : [
             {
               "value" : 1
