@@ -9,6 +9,7 @@ pub const COMMAND_GET_FIRMWARE_INFO: u8 = 0x08;
 pub const COMMAND_OTA_BEGIN: u8 = 0x09;
 pub const COMMAND_OTA_DATA: u8 = 0x0A;
 pub const COMMAND_OTA_END: u8 = 0x0B;
+pub const COMMAND_OTA_ROLLBACK: u8 = 0x0C;
 
 pub const RESPONSE_STATUS: u8 = 0x81;
 pub const RESPONSE_AUTH_OK: u8 = 0x82;
@@ -23,6 +24,7 @@ pub const RESPONSE_FIRMWARE_INFO: u8 = 0x8A;
 pub const RESPONSE_OTA_BEGIN_OK: u8 = 0x8B;
 pub const RESPONSE_OTA_DATA_OK: u8 = 0x8C;
 pub const RESPONSE_OTA_END_OK: u8 = 0x8D;
+pub const RESPONSE_OTA_ROLLBACK_OK: u8 = 0x8E;
 pub const RESPONSE_ERROR: u8 = 0xFF;
 
 pub const FIRMWARE_VERSION: &str = env!("CARGO_PKG_VERSION");

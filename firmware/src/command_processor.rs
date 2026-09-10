@@ -1,9 +1,10 @@
 use ayphr_protocol::{
     COMMAND_APPLY_SETUP, COMMAND_AUTHENTICATE, COMMAND_CHANGE_PASSWORD, COMMAND_FACTORY_RESET,
     COMMAND_GET_FIRMWARE_INFO, COMMAND_GET_STATUS, COMMAND_OTA_BEGIN, COMMAND_OTA_DATA,
-    COMMAND_OTA_END, COMMAND_RESTART, COMMAND_UPDATE_WIFI, RESPONSE_AUTH_FAILED, RESPONSE_AUTH_OK,
-    RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_ERROR, RESPONSE_FACTORY_RESET_OK, RESPONSE_FIRMWARE_INFO,
-    RESPONSE_OTA_BEGIN_OK, RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_RESTART_OK,
+    COMMAND_OTA_END, COMMAND_OTA_ROLLBACK, COMMAND_RESTART, COMMAND_UPDATE_WIFI,
+    RESPONSE_AUTH_FAILED, RESPONSE_AUTH_OK, RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_ERROR,
+    RESPONSE_FACTORY_RESET_OK, RESPONSE_FIRMWARE_INFO, RESPONSE_OTA_BEGIN_OK,
+    RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RESTART_OK,
     RESPONSE_SETUP_FAILED, RESPONSE_SETUP_OK, RESPONSE_STATUS, RESPONSE_UPDATE_WIFI_OK,
 };
 use log::info;
@@ -15,7 +16,7 @@ pub fn process_ble_request(setup: &DeviceSetup, data: &[u8]) -> Vec<u8> {
 }
 
 pub fn process_serial_request(setup: &DeviceSetup, data: &[u8]) -> Vec<u8> {
-    process_request(setup, data, true)
+    process_request(setup, data, false)
 }
 
 fn process_request(setup: &DeviceSetup, data: &[u8], bypass_auth: bool) -> Vec<u8> {
@@ -35,15 +36,16 @@ fn process_request(setup: &DeviceSetup, data: &[u8], bypass_auth: bool) -> Vec<u
         COMMAND_CHANGE_PASSWORD => handle_change_password(setup, data, &mut cursor, bypass_auth),
         COMMAND_UPDATE_WIFI => handle_update_wifi(setup, data, &mut cursor, bypass_auth),
         COMMAND_GET_FIRMWARE_INFO => handle_get_firmware_info(),
-        COMMAND_OTA_BEGIN => handle_ota_begin(data, &mut cursor),
+        COMMAND_OTA_BEGIN => handle_ota_begin(setup, data, &mut cursor, bypass_auth),
         COMMAND_OTA_DATA => handle_ota_data(data, &mut cursor),
         COMMAND_OTA_END => handle_ota_end(),
+        COMMAND_OTA_ROLLBACK => handle_ota_rollback(setup, bypass_auth),
         _ => vec![RESPONSE_ERROR],
     }
 }
 
 fn handle_get_status(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
-    let state = setup.state.lock().unwrap();
+    let state = setup.lock_state();
     let name_bytes = state.data.device_name.as_bytes();
     let name_len = name_bytes.len().min(255) as u8;
 
@@ -82,7 +84,7 @@ fn handle_authenticate(
         None => return vec![RESPONSE_ERROR],
     };
 
-    let mut state = setup.state.lock().unwrap();
+    let mut state = setup.lock_state();
 
     if !state.data.configured || !state.data.auth_required {
         state.authenticated = true;
@@ -105,7 +107,7 @@ fn handle_apply_setup(
     bypass_auth: bool,
 ) -> Vec<u8> {
     {
-        let state = setup.state.lock().unwrap();
+        let state = setup.lock_state();
         if !bypass_auth && state.data.configured && !state.authenticated {
             return vec![RESPONSE_AUTH_FAILED];
         }
@@ -138,7 +140,7 @@ fn handle_apply_setup(
     }
 
     let mut new_data = {
-        let state = setup.state.lock().unwrap();
+        let state = setup.lock_state();
         state.data.clone()
     };
 
@@ -155,7 +157,7 @@ fn handle_apply_setup(
     let result = DeviceSetup::save_to_nvs(&setup.nvs, &new_data);
 
     if result.is_ok() {
-        let mut state = setup.state.lock().unwrap();
+        let mut state = setup.lock_state();
         state.data = new_data;
         state.authenticated = !bypass_auth;
         vec![RESPONSE_SETUP_OK]
@@ -166,7 +168,7 @@ fn handle_apply_setup(
 
 fn handle_restart(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
     {
-        let state = setup.state.lock().unwrap();
+        let state = setup.lock_state();
         if !bypass_auth && state.data.configured && !state.authenticated {
             return vec![RESPONSE_AUTH_FAILED];
         }
@@ -182,7 +184,7 @@ fn handle_restart(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
 
 fn handle_factory_reset(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
     {
-        let state = setup.state.lock().unwrap();
+        let state = setup.lock_state();
         if !bypass_auth && state.data.configured && !state.authenticated {
             return vec![RESPONSE_AUTH_FAILED];
         }
@@ -192,7 +194,7 @@ fn handle_factory_reset(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
     let result = DeviceSetup::save_to_nvs(&setup.nvs, &default_data);
 
     if result.is_ok() {
-        let mut state = setup.state.lock().unwrap();
+        let mut state = setup.lock_state();
         state.data = default_data;
         state.authenticated = false;
         info!("Factory reset complete");
@@ -209,7 +211,7 @@ fn handle_change_password(
     bypass_auth: bool,
 ) -> Vec<u8> {
     {
-        let state = setup.state.lock().unwrap();
+        let state = setup.lock_state();
         if !bypass_auth && state.data.configured && !state.authenticated {
             return vec![RESPONSE_AUTH_FAILED];
         }
@@ -225,7 +227,7 @@ fn handle_change_password(
     };
 
     {
-        let state = setup.state.lock().unwrap();
+        let state = setup.lock_state();
         if !bypass_auth
             && state.data.configured
             && state.data.auth_required
@@ -236,7 +238,7 @@ fn handle_change_password(
     }
 
     let mut new_data = {
-        let state = setup.state.lock().unwrap();
+        let state = setup.lock_state();
         state.data.clone()
     };
 
@@ -246,7 +248,7 @@ fn handle_change_password(
     let result = DeviceSetup::save_to_nvs(&setup.nvs, &new_data);
 
     if result.is_ok() {
-        let mut state = setup.state.lock().unwrap();
+        let mut state = setup.lock_state();
         state.data.device_password = new_pass;
         state.data.auth_required = true;
         vec![RESPONSE_CHANGE_PASSWORD_OK]
@@ -262,7 +264,7 @@ fn handle_update_wifi(
     bypass_auth: bool,
 ) -> Vec<u8> {
     {
-        let state = setup.state.lock().unwrap();
+        let state = setup.lock_state();
         if !bypass_auth && state.data.configured && !state.authenticated {
             return vec![RESPONSE_AUTH_FAILED];
         }
@@ -275,7 +277,7 @@ fn handle_update_wifi(
     let wifi_pass = read_field(data, cursor).unwrap_or_default();
 
     let mut new_data = {
-        let state = setup.state.lock().unwrap();
+        let state = setup.lock_state();
         state.data.clone()
     };
 
@@ -286,7 +288,7 @@ fn handle_update_wifi(
     let result = DeviceSetup::save_to_nvs(&setup.nvs, &new_data);
 
     if result.is_ok() {
-        let mut state = setup.state.lock().unwrap();
+        let mut state = setup.lock_state();
         state.data.wifi_ssid = wifi_ssid;
         state.data.wifi_password = wifi_pass;
         state.data.wifi_required = true;
@@ -333,7 +335,19 @@ fn handle_get_firmware_info() -> Vec<u8> {
     resp
 }
 
-fn handle_ota_begin(data: &[u8], cursor: &mut usize) -> Vec<u8> {
+fn handle_ota_begin(
+    setup: &DeviceSetup,
+    data: &[u8],
+    cursor: &mut usize,
+    bypass_auth: bool,
+) -> Vec<u8> {
+    {
+        let state = setup.lock_state();
+        if !bypass_auth && state.data.configured && !state.authenticated {
+            return vec![RESPONSE_AUTH_FAILED];
+        }
+    }
+
     if *cursor + 4 > data.len() {
         return vec![RESPONSE_ERROR];
     }
@@ -375,6 +389,23 @@ fn handle_ota_end() -> Vec<u8> {
         Ok(()) => vec![RESPONSE_OTA_END_OK],
         Err(error) => {
             log::error!("OTA end failed: {}", error);
+            vec![RESPONSE_ERROR]
+        }
+    }
+}
+
+fn handle_ota_rollback(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
+    {
+        let state = setup.lock_state();
+        if !bypass_auth && state.data.configured && !state.authenticated {
+            return vec![RESPONSE_AUTH_FAILED];
+        }
+    }
+
+    match crate::ota::rollback() {
+        Ok(()) => vec![RESPONSE_OTA_ROLLBACK_OK],
+        Err(error) => {
+            log::error!("OTA rollback failed: {}", error);
             vec![RESPONSE_ERROR]
         }
     }

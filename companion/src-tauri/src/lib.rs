@@ -11,13 +11,14 @@ use ble::{
     disconnect_ble_device, factory_reset_ble_device, get_ble_devices,
     restart_ble_device, scan_ble_devices, submit_ble_setup, update_ble_device_wifi,
     get_firmware_info_ble, update_firmware_ble, download_and_update_firmware_ble,
+    ota_rollback_ble,
     BleDeviceStore,
 };
 use serial::{
-    change_serial_device_password, connect_serial_device, factory_reset_serial_device, get_serial_devices,
-    restart_serial_device, scan_serial_devices, submit_serial_setup,
-    update_serial_device_wifi, get_firmware_info_serial, update_firmware_serial,
-    download_and_update_firmware_serial,
+    authenticate_serial_device, change_serial_device_password, connect_serial_device,
+    factory_reset_serial_device, get_serial_devices, restart_serial_device, scan_serial_devices,
+    submit_serial_setup, update_serial_device_wifi, get_firmware_info_serial,
+    update_firmware_serial, download_and_update_firmware_serial, ota_rollback_serial,
     SerialDeviceStore,
 };
 use tauri::menu::{MenuBuilder, MenuItem};
@@ -42,14 +43,14 @@ fn ensure_tray_icon(app: &AppHandle) -> tauri::Result<()> {
         .item(&MenuItem::with_id(
             app,
             "show",
-            "Show Ayphr Companion",
+            "Show",
             true,
             None::<&str>,
         )?)
         .item(&MenuItem::with_id(
             app,
             "hide",
-            "Hide Ayphr Companion",
+            "Hide",
             true,
             None::<&str>,
         )?)
@@ -57,7 +58,7 @@ fn ensure_tray_icon(app: &AppHandle) -> tauri::Result<()> {
         .item(&MenuItem::with_id(
             app,
             "quit",
-            "Quit Ayphr Companion",
+            "Quit",
             true,
             None::<&str>,
         )?)
@@ -150,7 +151,9 @@ pub fn run() {
             get_firmware_info_ble,
             update_firmware_ble,
             download_and_update_firmware_ble,
+            ota_rollback_ble,
             connect_serial_device,
+            authenticate_serial_device,
             submit_serial_setup,
             restart_serial_device,
             factory_reset_serial_device,
@@ -159,6 +162,7 @@ pub fn run() {
             get_firmware_info_serial,
             update_firmware_serial,
             download_and_update_firmware_serial,
+            ota_rollback_serial,
             set_background_mode
         ])
         .run(tauri::generate_context!())

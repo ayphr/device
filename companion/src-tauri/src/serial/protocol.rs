@@ -1,9 +1,13 @@
 use serialport::SerialPort;
+use std::collections::HashMap;
+use std::sync::Mutex;
 
 use super::constants::SERIAL_BAUD_RATE;
 use crate::constants::COMMAND_TIMEOUT;
 use crate::protocol::parse_status_response;
 use crate::types::ParsedStatus;
+
+static PORT_CACHE: Mutex<Option<HashMap<String, Box<dyn SerialPort>>>> = Mutex::new(None);
 
 pub fn query_status(port_name: &str) -> Result<ParsedStatus, String> {
     let response = send_command(port_name, vec![ayphr_protocol::COMMAND_GET_STATUS])?;
@@ -11,9 +15,40 @@ pub fn query_status(port_name: &str) -> Result<ParsedStatus, String> {
 }
 
 pub fn send_command(port_name: &str, payload: Vec<u8>) -> Result<Vec<u8>, String> {
-    let mut port = open_port(port_name)?;
-    write_frame(&mut *port, &payload)?;
-    read_frame(&mut *port)
+    let mut cache = PORT_CACHE
+        .lock()
+        .map_err(|_| "Serial port cache mutex poisoned".to_string())?;
+    let cache = cache.get_or_insert_with(HashMap::new);
+
+    if !cache.contains_key(port_name) {
+        let port = open_port(port_name)?;
+        cache.insert(port_name.to_string(), port);
+    }
+
+    let port = cache
+        .get_mut(port_name)
+        .expect("port inserted above or already present");
+
+    if let Err(error) = write_frame(&mut **port, &payload) {
+        cache.remove(port_name);
+        return Err(error);
+    }
+
+    match read_frame(&mut **port) {
+        Ok(data) => Ok(data),
+        Err(error) => {
+            cache.remove(port_name);
+            Err(error)
+        }
+    }
+}
+
+pub fn invalidate_port(port_name: &str) {
+    if let Ok(mut cache) = PORT_CACHE.lock() {
+        if let Some(cache) = cache.as_mut() {
+            cache.remove(port_name);
+        }
+    }
 }
 
 fn open_port(port_name: &str) -> Result<Box<dyn SerialPort>, String> {

@@ -1,9 +1,9 @@
 use ayphr_protocol::{
     append_field, COMMAND_APPLY_SETUP, COMMAND_CHANGE_PASSWORD, COMMAND_FACTORY_RESET,
-    COMMAND_OTA_BEGIN, COMMAND_OTA_DATA, COMMAND_OTA_END, COMMAND_RESTART, COMMAND_UPDATE_WIFI,
-    RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_FACTORY_RESET_OK, RESPONSE_OTA_BEGIN_OK,
-    RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_RESTART_OK,
-    RESPONSE_SETUP_OK, RESPONSE_UPDATE_WIFI_OK,
+    COMMAND_OTA_BEGIN, COMMAND_OTA_DATA, COMMAND_OTA_END, COMMAND_OTA_ROLLBACK, COMMAND_RESTART,
+    COMMAND_UPDATE_WIFI, RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_FACTORY_RESET_OK,
+    RESPONSE_OTA_BEGIN_OK, RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK,
+    RESPONSE_RESTART_OK, RESPONSE_SETUP_OK, RESPONSE_UPDATE_WIFI_OK,
 };
 use tauri::{AppHandle, Emitter};
 
@@ -289,4 +289,20 @@ pub async fn do_download_and_update_firmware(
 
     tracing::info!("[{}] downloaded firmware: {} bytes", label, firmware_data.len());
     do_update_firmware(transport, firmware_data, app, chunk_size, label).await
+}
+
+pub async fn do_ota_rollback(transport: &Transport) -> Result<(), String> {
+    let response = transport
+        .send_command(vec![COMMAND_OTA_ROLLBACK])
+        .await
+        .map_err(|e| log_string_error("OTA rollback command failed", e, "shared"))?;
+
+    if response.first().copied() != Some(RESPONSE_OTA_ROLLBACK_OK) {
+        return Err(log_string_error(
+            "OTA rollback rejected",
+            "Device rejected rollback command",
+            "shared",
+        ));
+    }
+    Ok(())
 }

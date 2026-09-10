@@ -232,6 +232,18 @@ pub async fn download_and_update_firmware_ble(
 }
 
 #[tauri::command]
+pub async fn ota_rollback_ble(
+    device_id: String,
+    store: State<'_, BleDeviceStore>,
+) -> Result<(), String> {
+    let connection = ensure_connected(device_id.clone(), &store)
+        .await
+        .map_err(|error| log_string_error("OTA rollback connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_ota_rollback(&transport).await
+}
+
+#[tauri::command]
 pub async fn disconnect_ble_device(
     device_id: String,
     app: AppHandle,
@@ -346,6 +358,7 @@ async fn ensure_connected(
         tx_characteristic,
         setup_complete: true,
         authenticated,
+        command_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
     })
 }
 

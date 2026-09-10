@@ -1,5 +1,6 @@
 use tauri::{AppHandle, Emitter, State};
 
+use ayphr_protocol::{COMMAND_AUTHENTICATE, RESPONSE_AUTH_FAILED, RESPONSE_AUTH_OK};
 use crate::commands;
 use crate::protocol::log_string_error;
 use crate::transport::Transport;
@@ -7,7 +8,10 @@ use crate::types::{BleConnectionState, FirmwareInfoResult};
 use super::constants::SERIAL_DEVICES_UPDATED_EVENT;
 
 use super::protocol::query_status;
-use super::state::{emit_devices, SerialDeviceSnapshot, SerialDeviceStore};
+use super::state::{
+    emit_devices, is_authenticated, refresh_snapshots, upsert_auth, SerialDeviceSnapshot,
+    SerialDeviceStore,
+};
 
 #[tauri::command]
 pub fn get_serial_devices(store: State<'_, SerialDeviceStore>) -> Vec<SerialDeviceSnapshot> {
@@ -23,19 +27,90 @@ pub async fn connect_serial_device(
     let status = query_status(&device_id)
         .map_err(|error| log_string_error("status query failed", error, "serial"))?;
 
+    let cached_auth = is_authenticated(&store, &device_id);
+    let authenticated = cached_auth || !status.auth_required || status.authenticated;
+
+    upsert_auth(&store, &device_id, authenticated);
+
     let mut devices = store.devices.lock().unwrap();
     if let Some(device) = devices.iter_mut().find(|device| device.id == device_id) {
         device.setup_complete = status.setup_complete;
         device.name = status.device_name.clone();
+        device.authenticated = authenticated;
+        device.auth_required = status.auth_required;
+        device.connected = true;
+    }
+    let _ = app.emit(SERIAL_DEVICES_UPDATED_EVENT, devices.clone());
+
+    Ok(BleConnectionState {
+        connected: true,
+        authenticated,
+        auth_required: status.auth_required,
+        wifi_required: status.wifi_required,
+        setup_complete: status.setup_complete,
+        device_name: status.device_name,
+    })
+}
+
+#[tauri::command]
+pub async fn authenticate_serial_device(
+    device_id: String,
+    password: String,
+    app: AppHandle,
+    store: State<'_, SerialDeviceStore>,
+) -> Result<BleConnectionState, String> {
+    let mut command = vec![COMMAND_AUTHENTICATE];
+    ayphr_protocol::append_field(&mut command, &password)
+        .map_err(|error| log_string_error("authenticate payload encoding failed", error, "serial"))?;
+
+    let transport = Transport::Serial(device_id.clone());
+    let response = transport
+        .send_command(command)
+        .await
+        .map_err(|error| log_string_error("authenticate command failed", error, "serial"))?;
+
+    match response.first().copied() {
+        Some(RESPONSE_AUTH_OK) => {
+            upsert_auth(&store, &device_id, true);
+        }
+        Some(RESPONSE_AUTH_FAILED) => {
+            upsert_auth(&store, &device_id, false);
+            refresh_snapshots(&store);
+            emit_devices(&app, &store);
+            return Err(log_string_error(
+                "authenticate rejected",
+                "Invalid device password",
+                "serial",
+            ));
+        }
+        _ => {
+            return Err(log_string_error(
+                "authenticate rejected",
+                "Unexpected response from device while authenticating",
+                "serial",
+            ));
+        }
+    }
+
+    let status = transport
+        .query_status()
+        .await
+        .map_err(|error| log_string_error("post-auth status query failed", error, "serial"))?;
+
+    let mut devices = store.devices.lock().unwrap();
+    if let Some(device) = devices.iter_mut().find(|device| device.id == device_id) {
+        device.setup_complete = status.setup_complete;
         device.authenticated = true;
-        device.auth_required = false;
+        device.auth_required = status.auth_required;
+        device.connected = true;
+        device.name = status.device_name.clone();
     }
     let _ = app.emit(SERIAL_DEVICES_UPDATED_EVENT, devices.clone());
 
     Ok(BleConnectionState {
         connected: true,
         authenticated: true,
-        auth_required: false,
+        auth_required: status.auth_required,
         wifi_required: status.wifi_required,
         setup_complete: status.setup_complete,
         device_name: status.device_name,
@@ -154,4 +229,13 @@ pub async fn download_and_update_firmware_serial(
         "serial",
     )
     .await
+}
+
+#[tauri::command]
+pub async fn ota_rollback_serial(
+    device_id: String,
+    _store: State<'_, SerialDeviceStore>,
+) -> Result<(), String> {
+    let transport = Transport::Serial(device_id);
+    commands::do_ota_rollback(&transport).await
 }

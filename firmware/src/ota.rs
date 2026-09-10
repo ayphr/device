@@ -1,5 +1,5 @@
 use esp_idf_svc::ota::{EspOta, EspOtaUpdate};
-use log::info;
+use log::{info, warn};
 use esp_idf_svc::io::Write;
 use std::sync::Mutex;
 
@@ -15,9 +15,32 @@ static OTA_STATE: Mutex<OtaSession> = Mutex::new(OtaSession {
     total_size: 0,
 });
 
+const MAX_OTA_PARTITION_SIZE: usize = 0x1E0000;
+
+fn lock_ota_state() -> Result<std::sync::MutexGuard<'static, OtaSession>, &'static str> {
+    match OTA_STATE.lock() {
+        Ok(guard) => Ok(guard),
+        Err(poisoned) => {
+            warn!("OTA mutex recovered from poisoning; resetting session state");
+            let mut guard = poisoned.into_inner();
+            guard.update = None;
+            guard.bytes_written = 0;
+            guard.total_size = 0;
+            Ok(guard)
+        }
+    }
+}
+
 pub fn begin(total_size: usize) -> Result<(), &'static str> {
-    let mut state = OTA_STATE.lock().map_err(|_| "OTA state lock poisoned")?;
-    
+    if total_size == 0 {
+        return Err("OTA firmware size must be greater than zero");
+    }
+    if total_size > MAX_OTA_PARTITION_SIZE {
+        return Err("OTA firmware size exceeds available flash partition");
+    }
+
+    let mut state = lock_ota_state()?;
+
     let ota = Box::leak(Box::new(
         EspOta::new().map_err(|_| "Failed to create OTA handle")?,
     ));
@@ -34,7 +57,7 @@ pub fn begin(total_size: usize) -> Result<(), &'static str> {
 }
 
 pub fn write_data(data: &[u8]) -> Result<(), &'static str> {
-    let mut state = OTA_STATE.lock().map_err(|_| "OTA state lock poisoned")?;
+    let mut state = lock_ota_state()?;
     let update = state
         .update
         .as_mut()
@@ -59,7 +82,7 @@ pub fn write_data(data: &[u8]) -> Result<(), &'static str> {
 }
 
 pub fn end() -> Result<(), &'static str> {
-    let mut state = OTA_STATE.lock().map_err(|_| "OTA state lock poisoned")?;
+    let mut state = lock_ota_state()?;
     let update = state
         .update
         .take()
@@ -77,5 +100,20 @@ pub fn end() -> Result<(), &'static str> {
         std::thread::sleep(std::time::Duration::from_millis(500));
         esp_idf_svc::hal::reset::restart();
     });
+    Ok(())
+}
+
+pub fn mark_valid() {
+    unsafe {
+        esp_idf_svc::sys::esp_ota_mark_app_valid_cancel_rollback();
+    }
+    info!("OTA app marked valid, rollback cancelled");
+}
+
+pub fn rollback() -> Result<(), &'static str> {
+    info!("OTA rollback requested, rebooting into previous firmware...");
+    unsafe {
+        esp_idf_svc::sys::esp_ota_mark_app_invalid_rollback_and_reboot();
+    }
     Ok(())
 }

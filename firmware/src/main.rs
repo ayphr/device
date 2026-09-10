@@ -35,6 +35,8 @@ fn main() -> anyhow::Result<()> {
 
     let setup = DeviceSetup::new(nvs_partition.clone())?;
 
+    ota::mark_valid();
+
     let mut _wifi = BlockingWifi::wrap(
         esp_idf_svc::wifi::EspWifi::new(
             peripherals.modem,

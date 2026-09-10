@@ -20,7 +20,7 @@
     "@tauri-apps/plugin-process": "^2",
     "@tauri-apps/plugin-updater": "^2",
     "@twemoji/api": "^17.0.2",
-    "liquidity-react": "^1.0.3",
+    "liquidity-react": "^1.0.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

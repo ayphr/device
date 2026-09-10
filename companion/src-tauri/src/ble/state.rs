@@ -25,6 +25,7 @@ pub struct ActiveBleConnection {
     pub tx_characteristic: Characteristic,
     pub setup_complete: bool,
     pub authenticated: bool,
+    pub command_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 #[derive(Clone, Serialize)]

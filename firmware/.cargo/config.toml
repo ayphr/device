@@ -15,3 +15,5 @@ build-std = ["std", "panic_abort"]
 [env]
 ESP_IDF_SYS_ROOT_CRATE = { value = "." }
 ESP_IDF_VERSION = "v5.2.1"
+ESP_IDF_GLOB_PARTITIONS_BASE = { value = ".", relative = true }
+ESP_IDF_GLOB_PARTITIONS_CSV = { value = "partitions.csv" }

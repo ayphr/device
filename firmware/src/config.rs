@@ -48,6 +48,16 @@ pub struct State {
     pub authenticated: bool,
 }
 
+fn lock_state<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            warn!("Mutex recovered from poisoning");
+            poisoned.into_inner()
+        }
+    }
+}
+
 impl DeviceSetup {
     pub fn new(nvs_partition: EspDefaultNvsPartition) -> Result<Arc<Self>, anyhow::Error> {
         let nvs = EspNvs::new(nvs_partition, NVS_NAMESPACE, true)?;
@@ -64,18 +74,22 @@ impl DeviceSetup {
         Ok(Arc::new(setup))
     }
 
+    pub fn lock_state(&self) -> std::sync::MutexGuard<'_, State> {
+        lock_state(&self.state)
+    }
+
     pub fn is_configured(&self) -> bool {
-        self.state.lock().unwrap().data.configured
+        lock_state(&self.state).data.configured
     }
 
     pub fn reset_authentication(&self) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = lock_state(&self.state);
         state.authenticated = false;
         info!("BLE authentication reset");
     }
 
     pub fn device_name_for_advertising(&self) -> String {
-        let state = self.state.lock().unwrap();
+        let state = lock_state(&self.state);
         if !state.data.device_name.is_empty() {
             state.data.device_name.clone()
         } else {
@@ -84,7 +98,7 @@ impl DeviceSetup {
     }
 
     pub fn load_wifi_credentials(&self) -> (String, String) {
-        let state = self.state.lock().unwrap();
+        let state = lock_state(&self.state);
         (
             state.data.wifi_ssid.clone(),
             state.data.wifi_password.clone(),
@@ -92,7 +106,7 @@ impl DeviceSetup {
     }
 
     fn load_from_nvs(&mut self) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = lock_state(&self.state);
         let mut buf = [0u8; 128];
 
         state.data.configured =

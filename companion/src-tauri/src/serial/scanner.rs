@@ -1,5 +1,5 @@
 use serialport::SerialPortType;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 use tracing::debug;
@@ -29,10 +29,19 @@ fn is_likely_non_device_port(port_name: &str) -> bool {
 }
 
 pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Result<(), String> {
+    let mut previous_ports: HashSet<String> = HashSet::new();
+
     loop {
         let now = Instant::now();
         let ports = serialport::available_ports().map_err(|error| error.to_string())?;
         let mut seen_devices: HashMap<String, (SerialDeviceSnapshot, Instant)> = HashMap::new();
+        let mut seen_ports = HashSet::new();
+
+        let cached_auth: Vec<String> = {
+            let mut cache = store.authenticated_cache.lock().unwrap();
+            cache.retain(|_, t| t.elapsed() < std::time::Duration::from_secs(600));
+            cache.keys().cloned().collect()
+        };
 
         for port in ports {
             let port_name = port.port_name.clone();
@@ -46,6 +55,10 @@ pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Re
                 Ok(status) => status,
                 Err(_) => continue,
             };
+            seen_ports.insert(port_name.clone());
+
+            let cached = cached_auth.contains(&port_name);
+            let authenticated = cached || !status.auth_required || status.authenticated;
 
             let transport_label = match port.port_type {
                 SerialPortType::UsbPort(_) => "serial".to_string(),
@@ -62,8 +75,8 @@ pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Re
                 rssi: None,
                 signal_strength: 0,
                 connected: true,
-                authenticated: true,
-                auth_required: false,
+                authenticated,
+                auth_required: status.auth_required,
                 connectable: true,
                 status_label: "Serial connected".to_string(),
                 last_seen_seconds_ago: 0,
@@ -72,7 +85,11 @@ pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Re
                 service_uuids: Vec::new(),
             };
 
-            seen_devices.insert(port_name, (snapshot, now));
+            seen_devices.insert(port_name.clone(), (snapshot, now));
+        }
+
+        for disappeared in previous_ports.difference(&seen_ports) {
+            crate::serial::protocol::invalidate_port(disappeared);
         }
 
         seen_devices.retain(|_, (_, seen_at)| seen_at.elapsed() <= DEVICE_RETENTION_WINDOW);
@@ -90,6 +107,7 @@ pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Re
         *store.devices.lock().unwrap() = active_devices.clone();
         let _ = app.emit(SERIAL_DEVICES_UPDATED_EVENT, active_devices);
 
+        previous_ports = seen_ports;
         tokio::time::sleep(SCAN_INTERVAL).await;
     }
 }

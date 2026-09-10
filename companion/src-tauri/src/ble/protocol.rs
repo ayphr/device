@@ -11,6 +11,8 @@ pub async fn send_command(
     connection: &ActiveBleConnection,
     payload: Vec<u8>,
 ) -> Result<Vec<u8>, String> {
+    let _guard = connection.command_lock.lock().await;
+
     debug!(
         "[ble] sending command bytes={} tx_uuid={}",
         format_bytes(&payload),

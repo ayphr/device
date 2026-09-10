@@ -17,7 +17,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { check, type Update } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
+import { exit, relaunch } from '@tauri-apps/plugin-process';
 import styles from './App.module.css';
 import logo from './assets/logo.svg';
 
@@ -270,12 +270,13 @@ function App() {
     let unlistenCloseRequested: (() => void) | undefined;
 
     void currentWindow.onCloseRequested(async (event) => {
-      if (!settings.general.stayOpenInBackground) {
-        return;
-      }
-
       event.preventDefault();
-      await currentWindow.hide();
+
+      if (settings.general.stayOpenInBackground) {
+        await currentWindow.hide();
+      } else {
+        await exit(0);
+      }
     }).then((unlisten) => {
       unlistenCloseRequested = unlisten;
     });
