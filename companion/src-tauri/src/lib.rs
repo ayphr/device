@@ -26,6 +26,9 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::MacosLauncher;
 use tracing::{error, info, warn};
 use tracing_subscriber;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static BACKGROUND_MODE: AtomicBool = AtomicBool::new(false);
 
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -100,6 +103,7 @@ fn set_tray_icon_visibility(app: &AppHandle, visible: bool) -> tauri::Result<()>
 
 #[tauri::command]
 fn set_background_mode(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    BACKGROUND_MODE.store(enabled, Ordering::SeqCst);
     set_tray_icon_visibility(&app, enabled).map_err(|error| error.to_string())
 }
 
@@ -121,6 +125,22 @@ pub fn run() {
 
             app.manage(device_store.clone());
             app.manage(serial_store.clone());
+
+            let event_app = app.handle().clone();
+            if let Some(window) = app.get_webview_window("main") {
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        if BACKGROUND_MODE.load(Ordering::SeqCst) {
+                            api.prevent_close();
+                            if let Some(window) = event_app.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        } else {
+                            event_app.exit(0);
+                        }
+                    }
+                });
+            }
 
             tauri::async_runtime::spawn(async move {
                 if let Err(error) = scan_ble_devices(app_handle, device_store).await {

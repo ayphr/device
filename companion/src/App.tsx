@@ -15,9 +15,8 @@ import { loadAppSettings, saveAppSettings, type AppSettings } from './lib/settin
 import { disable, enable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { check, type Update } from '@tauri-apps/plugin-updater';
-import { exit, relaunch } from '@tauri-apps/plugin-process';
+import { relaunch } from '@tauri-apps/plugin-process';
 import styles from './App.module.css';
 import logo from './assets/logo.svg';
 
@@ -264,27 +263,6 @@ function App() {
       unlistenSerialDevices?.();
     };
   }, []);
-
-  useEffect(() => {
-    const currentWindow = getCurrentWindow();
-    let unlistenCloseRequested: (() => void) | undefined;
-
-    void currentWindow.onCloseRequested(async (event) => {
-      event.preventDefault();
-
-      if (settings.general.stayOpenInBackground) {
-        await currentWindow.hide();
-      } else {
-        await exit(0);
-      }
-    }).then((unlisten) => {
-      unlistenCloseRequested = unlisten;
-    });
-
-    return () => {
-      unlistenCloseRequested?.();
-    };
-  }, [settings.general.stayOpenInBackground]);
 
   useEffect(() => {
     if (!selectedDevice) {
