@@ -6,8 +6,8 @@ import {
   IconHome2,
   IconMessageCircle,
   IconInfoCircle,
-  IconGlobe,
   IconBrandGithub,
+  IconWorld,
 } from '@tabler/icons-react';
 import { Toggle, Button, IconButton } from '../../components/common';
 import { type AppSettings } from '../../lib/settings';
@@ -288,7 +288,7 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
                 borderless={false}
               />
               <IconButton
-                icon={<IconGlobe size={16} />}
+                icon={<IconWorld size={16} />}
                 onClick={() => openUrl('https://ayphr.com')}
                 borderless={false}
               />
