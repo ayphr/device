@@ -58,6 +58,16 @@ pub fn begin(total_size: usize) -> Result<(), &'static str> {
 
 pub fn write_data(data: &[u8]) -> Result<(), &'static str> {
     let mut state = lock_ota_state()?;
+
+    if data.is_empty() {
+        return Err("OTA data chunk is empty");
+    }
+
+    let remaining = state.total_size.saturating_sub(state.bytes_written);
+    if data.len() > remaining {
+        return Err("OTA data exceeds declared firmware size");
+    }
+
     let update = state
         .update
         .as_mut()

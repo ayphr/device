@@ -14,7 +14,7 @@ pub struct DeviceStatusResponse {
 
 impl DeviceStatusResponse {
     pub fn parse(payload: &[u8]) -> Result<Self, &'static str> {
-        if payload.len() < 6 || payload[0] != RESPONSE_STATUS {
+        if payload.len() < 7 || payload[0] != RESPONSE_STATUS {
             return Err("Invalid status payload or opcode");
         }
 

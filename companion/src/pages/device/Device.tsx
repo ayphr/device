@@ -44,6 +44,45 @@ interface FirmwareUpdateProgress {
   message: string;
 }
 
+interface FirmwareReleaseMetadata {
+  version?: string;
+  binaryUrl?: string;
+  sha256?: string;
+  body?: string;
+}
+
+function normalizeFirmwareVersion(version: string): string {
+  return version.replace(/^firmware-v/i, '').replace(/^v/i, '');
+}
+
+function compareVersions(a: string, b: string): number {
+  const toParts = (version: string) =>
+    version
+      .split('.')
+      .map((part) => {
+        const parsed = parseInt(part, 10);
+        return Number.isNaN(parsed) ? 0 : parsed;
+      });
+
+  const partsA = toParts(a);
+  const partsB = toParts(b);
+  const length = Math.max(partsA.length, partsB.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const diff = (partsA[index] ?? 0) - (partsB[index] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+async function fetchFirmwareReleaseMetadata(): Promise<FirmwareReleaseMetadata> {
+  const metadataResponse = await fetch(
+    'https://github.com/ayphr/device/releases/latest/download/version.json',
+  );
+  if (!metadataResponse.ok) throw new Error('Failed to fetch release metadata');
+  return (await metadataResponse.json()) as FirmwareReleaseMetadata;
+}
+
 export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>) {
   const [activeSection, setActiveSection] = useState<DeviceSection>('general');
   const [isRestarting, setIsRestarting] = useState(false);
@@ -149,7 +188,7 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
 
     if (newPassword.length < 8) {
       setPasswordError('New password must be at least 8 characters');
-      return;
+      throw new Error('New password must be at least 8 characters');
     }
     setIsChangingPassword(true);
     setPasswordError(null);
@@ -164,6 +203,7 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
       setNewPassword('');
     } catch (error) {
       setPasswordError(typeof error === 'string' ? error : 'Failed to change password');
+      throw error;
     } finally {
       setIsChangingPassword(false);
     }
@@ -172,7 +212,7 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
   const handleWifiUpdate = async () => {
     if (wifiSsid.trim().length === 0) {
       setWifiError('SSID cannot be empty');
-      return;
+      throw new Error('SSID cannot be empty');
     }
     setIsUpdatingWifi(true);
     setWifiError(null);
@@ -187,6 +227,7 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
       setWifiPassword('');
     } catch (error) {
       setWifiError(typeof error === 'string' ? error : 'Failed to update Wi-Fi');
+      throw error;
     } finally {
       setIsUpdatingWifi(false);
     }
@@ -196,22 +237,31 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
     setIsCheckingFirmwareUpdate(true);
     setFirmwareError(null);
     try {
-      const response = await fetch('https://api.github.com/repos/ayphr/device/releases/latest', {
-        headers: { Accept: 'application/vnd.github.v3+json' },
-      });
-      if (!response.ok) {
-        throw new Error('Failed to fetch latest release');
+      const metadata = await fetchFirmwareReleaseMetadata();
+      const downloadUrl = metadata.binaryUrl;
+      const expectedSha256 = metadata.sha256;
+      if (!downloadUrl || !expectedSha256) {
+        throw new Error('Release metadata is missing download information');
       }
-      const release = await response.json();
-      const firmwareAsset = release.assets?.find((a: { name: string }) => a.name.endsWith('.bin'));
-      if (firmwareAsset) {
-        setUpdateAvailable({
-          version: release.tag_name?.replace('firmware-v', '') ?? release.tag_name,
-          body: release.body ?? undefined,
-        });
-      } else {
+
+      const installedVersion = firmwareInfo?.version;
+      const latestVersion = metadata.version
+        ? normalizeFirmwareVersion(metadata.version)
+        : null;
+
+      if (
+        installedVersion &&
+        latestVersion &&
+        compareVersions(latestVersion, installedVersion) <= 0
+      ) {
         setUpdateAvailable(null);
+        return;
       }
+
+      setUpdateAvailable({
+        version: latestVersion ?? 'latest',
+        body: metadata.body,
+      });
     } catch (error) {
       setUpdateAvailable(null);
       setFirmwareError(typeof error === 'string' ? error : 'Failed to check for updates');
@@ -226,13 +276,9 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
     setFirmwareProgress(null);
     setFirmwareError(null);
     try {
-      const metadataResponse = await fetch(
-        'https://github.com/ayphr/device/releases/latest/download/version.json',
-      );
-      if (!metadataResponse.ok) throw new Error('Failed to fetch release metadata');
-      const metadata = await metadataResponse.json();
-      const downloadUrl = metadata.binaryUrl as string;
-      const expectedSha256 = metadata.sha256 as string;
+      const metadata = await fetchFirmwareReleaseMetadata();
+      const downloadUrl = metadata.binaryUrl;
+      const expectedSha256 = metadata.sha256;
       if (!downloadUrl || !expectedSha256) {
         throw new Error('Release metadata is missing download information');
       }

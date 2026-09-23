@@ -52,9 +52,14 @@ export const Modal = ({
     }
   };
 
-  const handleConfirm = () => {
-    onConfirm?.();
-    onClose();
+  const handleConfirm = async () => {
+    try {
+      await onConfirm?.();
+      onClose();
+    } catch (error) {
+      // Keep the modal open so the caller can surface the error.
+      console.error('Modal confirm failed:', error);
+    }
   };
 
   return (

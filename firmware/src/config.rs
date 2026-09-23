@@ -107,7 +107,7 @@ impl DeviceSetup {
 
     fn load_from_nvs(&mut self) {
         let mut state = lock_state(&self.state);
-        let mut buf = [0u8; 128];
+        let mut buf = [0u8; 256];
 
         state.data.configured =
             self.nvs.get_u8(NVS_KEY_CONFIGURED).unwrap_or(Some(0)) == Some(1);
