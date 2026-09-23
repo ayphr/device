@@ -27,8 +27,6 @@ pub const RESPONSE_OTA_END_OK: u8 = 0x8D;
 pub const RESPONSE_OTA_ROLLBACK_OK: u8 = 0x8E;
 pub const RESPONSE_ERROR: u8 = 0xFF;
 
-pub const FIRMWARE_VERSION: &str = env!("CARGO_PKG_VERSION");
-
 pub const SERIAL_CHUNK_SIZE: usize = 2048;
 pub const BLE_CHUNK_SIZE: usize = 200;
 

@@ -28,13 +28,11 @@ interface BleConnectionState {
   deviceName: string;
 }
 
-function replaceDevicesForTransport(currentDevices: DeviceInfo[], incomingDevices: DeviceInfo[]) {
-  const transport = incomingDevices[0]?.transport;
-
-  if (!transport) {
-    return currentDevices;
-  }
-
+function replaceDevicesForTransport(
+  currentDevices: DeviceInfo[],
+  incomingDevices: DeviceInfo[],
+  transport: DeviceInfo['transport'],
+) {
   const retainedDevices = currentDevices.filter((device) => device.transport !== transport);
   return [...retainedDevices, ...incomingDevices];
 }
@@ -236,7 +234,9 @@ function App() {
     void seedDevices();
 
     void listen<DeviceInfo[]>('ble-devices-updated', (event) => {
-      setDevices((currentDevices) => replaceDevicesForTransport(currentDevices, event.payload));
+      setDevices((currentDevices) =>
+        replaceDevicesForTransport(currentDevices, event.payload, 'ble'),
+      );
     }).then((unlisten) => {
       if (cancelled) {
         unlisten();
@@ -247,7 +247,9 @@ function App() {
     });
 
     void listen<DeviceInfo[]>('serial-devices-updated', (event) => {
-      setDevices((currentDevices) => replaceDevicesForTransport(currentDevices, event.payload));
+      setDevices((currentDevices) =>
+        replaceDevicesForTransport(currentDevices, event.payload, 'serial'),
+      );
     }).then((unlisten) => {
       if (cancelled) {
         unlisten();

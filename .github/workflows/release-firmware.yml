@@ -60,6 +60,7 @@ jobs:
           echo "IDF_TOOLS_PATH=$IDF_TOOLS_PATH" >> "$GITHUB_ENV"
 
       - name: Sync package version to release tag
+        if: startsWith(github.ref, 'refs/tags/firmware-v')
         shell: bash
         env:
           RELEASE_TAG: ${{ github.ref_name }}

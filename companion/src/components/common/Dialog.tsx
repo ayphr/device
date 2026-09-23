@@ -1,44 +1,6 @@
 import type { ReactNode } from 'react';
 import { Modal } from './Modal';
 
-export interface AlertProps {
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  children: ReactNode;
-  variant?: 'info' | 'success' | 'warning' | 'error';
-  actionText?: string;
-  onAction?: () => void;
-}
-
-export const Alert = ({
-  isOpen,
-  onClose,
-  title,
-  children,
-  actionText = 'OK',
-  onAction,
-}: AlertProps) => {
-  const handleConfirm = () => {
-    onAction?.();
-    onClose();
-  };
-
-  return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title={title}
-      confirmText={actionText}
-      onConfirm={handleConfirm}
-      showCancel={false}
-      size="sm"
-    >
-      {children}
-    </Modal>
-  );
-};
-
 export interface ConfirmDialogProps {
   isOpen: boolean;
   onConfirm: () => void;

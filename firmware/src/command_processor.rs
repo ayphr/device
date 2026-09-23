@@ -12,6 +12,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::config::{DeviceSetup, DeviceSetupData};
 
+/// Version of this firmware crate. `ayphr_protocol::FIRMWARE_VERSION` resolves
+/// to the *shared* crate's version, which is never bumped by the release
+/// pipeline, so the firmware must report its own package version instead.
+const FIRMWARE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 static WIFI_RECONNECT_REQUESTED: AtomicBool = AtomicBool::new(false);
 static RESTART_SCHEDULED: AtomicBool = AtomicBool::new(false);
 
@@ -347,7 +352,7 @@ fn read_field(data: &[u8], cursor: &mut usize) -> Option<String> {
 }
 
 fn handle_get_firmware_info() -> Vec<u8> {
-    let version = ayphr_protocol::FIRMWARE_VERSION;
+    let version = FIRMWARE_VERSION;
     let hardware_rev = "rev1";
     let uptime_secs = BOOT_TIME
         .get()

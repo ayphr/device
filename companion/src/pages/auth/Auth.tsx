@@ -34,7 +34,9 @@ export default function AuthPage({ device, onBack, onAuthenticated }: Readonly<A
     setError(null);
 
     try {
-      const connection = await invoke<BleConnectionState>('authenticate_ble_device', {
+      const command =
+        device.transport === 'serial' ? 'authenticate_serial_device' : 'authenticate_ble_device';
+      const connection = await invoke<BleConnectionState>(command, {
         deviceId: device.id,
         password,
       });
