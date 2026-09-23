@@ -1,15 +1,19 @@
+use esp_idf_svc::io::Write;
 use esp_idf_svc::ota::{EspOta, EspOtaUpdate};
 use log::{info, warn};
-use esp_idf_svc::io::Write;
 use std::sync::Mutex;
 
 pub struct OtaSession {
+    ota: Option<*mut EspOta>,
     update: Option<EspOtaUpdate<'static>>,
     bytes_written: usize,
     total_size: usize,
 }
 
+unsafe impl Send for OtaSession {}
+
 static OTA_STATE: Mutex<OtaSession> = Mutex::new(OtaSession {
+    ota: None,
     update: None,
     bytes_written: 0,
     total_size: 0,
@@ -41,12 +45,20 @@ pub fn begin(total_size: usize) -> Result<(), &'static str> {
 
     let mut state = lock_ota_state()?;
 
-    let ota = Box::leak(Box::new(
-        EspOta::new().map_err(|_| "Failed to create OTA handle")?,
-    ));
+    if let Some(previous) = state.update.take() {
+        drop(previous);
+    }
 
-    let update = ota
-        .initiate_update()
+    if state.ota.is_none() {
+        let ota = Box::leak(Box::new(
+            EspOta::new().map_err(|_| "Failed to create OTA handle")?,
+        ));
+        state.ota = Some(ota as *mut EspOta);
+    }
+
+    let ota_ptr = state.ota.ok_or("OTA handle unavailable")?;
+    let update = unsafe { &mut *ota_ptr }
+        .initiate_update_with_known_size(total_size)
         .map_err(|_| "Failed to initiate OTA update")?;
 
     state.update = Some(update);
@@ -93,6 +105,12 @@ pub fn write_data(data: &[u8]) -> Result<(), &'static str> {
 
 pub fn end() -> Result<(), &'static str> {
     let mut state = lock_ota_state()?;
+
+    if state.bytes_written < state.total_size {
+        state.update = None;
+        return Err("OTA incomplete: fewer bytes received than declared size");
+    }
+
     let update = state
         .update
         .take()
@@ -119,8 +137,11 @@ pub fn mark_valid() {
 
 pub fn rollback() -> Result<(), &'static str> {
     info!("OTA rollback requested, rebooting into previous firmware...");
-    unsafe {
-        esp_idf_svc::sys::esp_ota_mark_app_invalid_rollback_and_reboot();
-    }
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        unsafe {
+            esp_idf_svc::sys::esp_ota_mark_app_invalid_rollback_and_reboot();
+        }
+    });
     Ok(())
 }

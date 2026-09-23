@@ -1,4 +1,4 @@
-use esp32_nimble::{BLEDevice, NimbleProperties, BLEAdvertisementData};
+use esp32_nimble::{BLEAdvertisementData, BLEDevice, NimbleProperties};
 use log::info;
 use std::sync::Arc;
 
@@ -29,13 +29,13 @@ pub fn init(setup: Arc<DeviceSetup>) {
     let tx_uuid = esp32_nimble::uuid128!(FIRMWARE_TX_CHARACTERISTIC_UUID);
 
     let service = server.create_service(service_uuid);
-    let rx_char = service
-        .lock()
-        .create_characteristic(rx_uuid, NimbleProperties::WRITE);
-    let tx_char = service.lock().create_characteristic(
-        tx_uuid,
-        NimbleProperties::READ | NimbleProperties::NOTIFY,
+    let rx_char = service.lock().create_characteristic(
+        rx_uuid,
+        NimbleProperties::WRITE | NimbleProperties::WRITE_NO_RSP,
     );
+    let tx_char = service
+        .lock()
+        .create_characteristic(tx_uuid, NimbleProperties::READ | NimbleProperties::NOTIFY);
 
     let setup_handler = Arc::clone(&setup);
     let tx_writer = Arc::clone(&tx_char);
