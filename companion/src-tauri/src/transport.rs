@@ -12,7 +12,7 @@ impl Transport {
     pub async fn send_command(&self, payload: Vec<u8>) -> Result<Vec<u8>, String> {
         match self {
             Transport::Ble(conn) => crate::ble::protocol::send_command(conn, payload).await,
-            Transport::Serial(id) => crate::serial::protocol::send_command(id, payload),
+            Transport::Serial(id) => crate::serial::protocol::send_command(id.clone(), payload).await,
         }
     }
 

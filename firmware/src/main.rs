@@ -37,7 +37,7 @@ fn main() -> anyhow::Result<()> {
 
     ota::mark_valid();
 
-    let mut _wifi = BlockingWifi::wrap(
+    let mut wifi = BlockingWifi::wrap(
         esp_idf_svc::wifi::EspWifi::new(
             peripherals.modem,
             sys_loop.clone(),
@@ -49,7 +49,7 @@ fn main() -> anyhow::Result<()> {
     ble::init(setup.clone());
 
     let (ssid, password) = setup.load_wifi_credentials();
-    wifi::connect(&mut _wifi, &ssid, &password);
+    wifi::connect(&mut wifi, &ssid, &password);
 
     let uart1 = peripherals.uart1;
     let serial_tx = peripherals.pins.gpio5;
@@ -76,7 +76,7 @@ fn main() -> anyhow::Result<()> {
         serial::run_loop(&uart, &serial_setup);
     });
 
-    let i2c_config = I2cConfig::new().baudrate(Hertz(I2C_FREQ_HZ).into());
+    let i2c_config = I2cConfig::new().baudrate(Hertz(I2C_FREQ_HZ));
     let i2c_driver = I2cDriver::new(
         peripherals.i2c0,
         peripherals.pins.gpio0,
@@ -102,6 +102,11 @@ fn main() -> anyhow::Result<()> {
     };
 
     loop {
+        if command_processor::take_wifi_reconnect_request() {
+            let (ssid, password) = setup.load_wifi_credentials();
+            wifi::reconnect(&mut wifi, &ssid, &password);
+        }
+
         if let Some(ref mut sensor) = bme280 {
             match sensor.sample() {
                 Ok(measurements) => {

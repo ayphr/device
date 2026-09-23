@@ -9,12 +9,22 @@ use crate::types::ParsedStatus;
 
 static PORT_CACHE: Mutex<Option<HashMap<String, Box<dyn SerialPort>>>> = Mutex::new(None);
 
-pub fn query_status(port_name: &str) -> Result<ParsedStatus, String> {
-    let response = send_command(port_name, vec![ayphr_protocol::COMMAND_GET_STATUS])?;
+pub async fn query_status(port_name: &str) -> Result<ParsedStatus, String> {
+    let response = send_command(
+        port_name.to_string(),
+        vec![ayphr_protocol::COMMAND_GET_STATUS],
+    )
+    .await?;
     parse_status_response(&response)
 }
 
-pub fn send_command(port_name: &str, payload: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn send_command(port_name: String, payload: Vec<u8>) -> Result<Vec<u8>, String> {
+    tokio::task::spawn_blocking(move || send_command_blocking(&port_name, payload))
+        .await
+        .map_err(|error| format!("Serial command task join error: {}", error))?
+}
+
+fn send_command_blocking(port_name: &str, payload: Vec<u8>) -> Result<Vec<u8>, String> {
     let mut cache = PORT_CACHE
         .lock()
         .map_err(|_| "Serial port cache mutex poisoned".to_string())?;

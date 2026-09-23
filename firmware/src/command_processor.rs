@@ -8,8 +8,37 @@ use ayphr_protocol::{
     RESPONSE_SETUP_FAILED, RESPONSE_SETUP_OK, RESPONSE_STATUS, RESPONSE_UPDATE_WIFI_OK,
 };
 use log::info;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::config::{DeviceSetup, DeviceSetupData};
+
+static WIFI_RECONNECT_REQUESTED: AtomicBool = AtomicBool::new(false);
+static RESTART_SCHEDULED: AtomicBool = AtomicBool::new(false);
+
+/// Schedules a device restart after a short delay so the transport has time
+/// to deliver the pending response to the caller. Safe to call multiple
+/// times; only the first request arms the restart.
+pub fn schedule_restart() {
+    if RESTART_SCHEDULED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        esp_idf_svc::hal::reset::restart();
+    });
+}
+
+/// Asks the WiFi management loop to reconnect with the credentials
+/// currently stored in NVS (e.g. after a runtime Wi-Fi update).
+pub fn request_wifi_reconnect() {
+    WIFI_RECONNECT_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+/// Consumes the reconnect request, returning whether one was pending.
+/// Called periodically by the main loop.
+pub fn take_wifi_reconnect_request() -> bool {
+    WIFI_RECONNECT_REQUESTED.swap(false, Ordering::SeqCst)
+}
 
 pub fn process_ble_request(setup: &DeviceSetup, data: &[u8]) -> Vec<u8> {
     process_request(setup, data, false)
@@ -154,12 +183,17 @@ fn handle_apply_setup(
     }
     new_data.configured = true;
 
+    let wifi_required = new_data.wifi_required;
+
     let result = DeviceSetup::save_to_nvs(&setup.nvs, &new_data);
 
     if result.is_ok() {
         let mut state = setup.lock_state();
         state.data = new_data;
         state.authenticated = !bypass_auth;
+        if wifi_required {
+            request_wifi_reconnect();
+        }
         vec![RESPONSE_SETUP_OK]
     } else {
         vec![RESPONSE_SETUP_FAILED]
@@ -175,10 +209,7 @@ fn handle_restart(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
     }
 
     info!("Executing device restart");
-    std::thread::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        esp_idf_svc::hal::reset::restart();
-    });
+    schedule_restart();
     vec![RESPONSE_RESTART_OK]
 }
 
@@ -292,6 +323,7 @@ fn handle_update_wifi(
         state.data.wifi_ssid = wifi_ssid;
         state.data.wifi_password = wifi_pass;
         state.data.wifi_required = true;
+        request_wifi_reconnect();
         vec![RESPONSE_UPDATE_WIFI_OK]
     } else {
         vec![RESPONSE_ERROR]

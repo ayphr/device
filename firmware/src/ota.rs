@@ -96,10 +96,7 @@ pub fn end() -> Result<(), &'static str> {
         "OTA update complete ({} bytes written), rebooting...",
         state.bytes_written
     );
-    std::thread::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        esp_idf_svc::hal::reset::restart();
-    });
+    crate::command_processor::schedule_restart();
     Ok(())
 }
 

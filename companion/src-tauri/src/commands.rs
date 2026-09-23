@@ -198,7 +198,7 @@ pub async fn do_update_firmware(
         ));
     }
 
-    let total_chunks = (total_size + chunk_size - 1) / chunk_size;
+    let total_chunks = total_size.div_ceil(chunk_size);
 
     for (seq, chunk_start) in (0..total_size).step_by(chunk_size).enumerate() {
         let chunk_end = (chunk_start + chunk_size).min(total_size);
@@ -267,11 +267,13 @@ pub async fn do_update_firmware(
 pub async fn do_download_and_update_firmware(
     transport: &Transport,
     download_url: &str,
+    expected_sha256: &str,
     app: &AppHandle,
     chunk_size: usize,
     label: &str,
 ) -> Result<(), String> {
     let url = download_url.to_string();
+    let expected_sha256 = expected_sha256.to_string();
     let firmware_data = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let response = ureq::get(&url)
             .call()
@@ -288,7 +290,26 @@ pub async fn do_download_and_update_firmware(
     .map_err(|error| log_string_error("firmware download failed", error, label))?;
 
     tracing::info!("[{}] downloaded firmware: {} bytes", label, firmware_data.len());
+
+    let actual_sha256 = sha256_hex(&firmware_data);
+    if expected_sha256.is_empty() || !actual_sha256.eq_ignore_ascii_case(&expected_sha256) {
+        return Err(log_string_error(
+            "firmware checksum mismatch",
+            format!("expected sha256 {}, got {}", expected_sha256, actual_sha256),
+            label,
+        ));
+    }
+
     do_update_firmware(transport, firmware_data, app, chunk_size, label).await
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(data);
+    digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 pub async fn do_ota_rollback(transport: &Transport) -> Result<(), String> {

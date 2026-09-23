@@ -51,7 +51,7 @@ pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Re
                 continue;
             }
 
-            let status = match query_status(&port_name) {
+            let status = match query_status(&port_name).await {
                 Ok(status) => status,
                 Err(_) => continue,
             };

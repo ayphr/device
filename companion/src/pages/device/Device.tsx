@@ -226,18 +226,23 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
     setFirmwareProgress(null);
     setFirmwareError(null);
     try {
-      const response = await fetch('https://api.github.com/repos/ayphr/device/releases/latest', {
-        headers: { Accept: 'application/vnd.github.v3+json' },
-      });
-      if (!response.ok) throw new Error('Failed to fetch release');
-      const release = await response.json();
-      const asset = release.assets?.find((a: { name: string }) => a.name.endsWith('.bin'));
-      if (!asset) throw new Error('Firmware binary not found in release');
+      const metadataResponse = await fetch(
+        'https://github.com/ayphr/device/releases/latest/download/version.json',
+      );
+      if (!metadataResponse.ok) throw new Error('Failed to fetch release metadata');
+      const metadata = await metadataResponse.json();
+      const downloadUrl = metadata.binaryUrl as string;
+      const expectedSha256 = metadata.sha256 as string;
+      if (!downloadUrl || !expectedSha256) {
+        throw new Error('Release metadata is missing download information');
+      }
 
-      const command = device.transport === 'serial' ? 'download_and_update_firmware_serial' : 'download_and_update_firmware_ble';
+      const command =
+        device.transport === 'serial' ? 'download_and_update_firmware_serial' : 'download_and_update_firmware_ble';
       await invoke(command, {
         deviceId: device.id,
-        downloadUrl: asset.browser_download_url,
+        downloadUrl,
+        expectedSha256,
       });
 
       setUpdateAvailable(null);

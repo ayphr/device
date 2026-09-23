@@ -74,7 +74,7 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
 
             let (is_connected, is_authenticated, known_setup_complete) = {
                 let guard = store.connections.lock().unwrap();
-                if let Some(connection) = guard.get(&address) {
+                if let Some(connection) = guard.get(&peripheral_id) {
                     (true, connection.authenticated, connection.setup_complete)
                 } else {
                     (false, false, setup_complete)
@@ -128,7 +128,7 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
             })
             .collect::<Vec<_>>();
 
-        active_devices.sort_by(|left, right| right.signal_strength.cmp(&left.signal_strength));
+        active_devices.sort_by_key(|device| std::cmp::Reverse(device.signal_strength));
 
         *store.devices.lock().unwrap() = active_devices.clone();
         let _ = app.emit(BLE_DEVICES_UPDATED_EVENT, active_devices);

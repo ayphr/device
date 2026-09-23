@@ -25,6 +25,7 @@ pub async fn connect_serial_device(
     store: State<'_, SerialDeviceStore>,
 ) -> Result<BleConnectionState, String> {
     let status = query_status(&device_id)
+        .await
         .map_err(|error| log_string_error("status query failed", error, "serial"))?;
 
     let cached_auth = is_authenticated(&store, &device_id);
@@ -118,6 +119,7 @@ pub async fn authenticate_serial_device(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn submit_serial_setup(
     device_id: String,
     device_name: String,
@@ -217,6 +219,7 @@ pub async fn update_firmware_serial(
 pub async fn download_and_update_firmware_serial(
     device_id: String,
     download_url: String,
+    expected_sha256: String,
     app: AppHandle,
     _store: State<'_, SerialDeviceStore>,
 ) -> Result<(), String> {
@@ -224,6 +227,7 @@ pub async fn download_and_update_firmware_serial(
     commands::do_download_and_update_firmware(
         &transport,
         &download_url,
+        &expected_sha256,
         &app,
         ayphr_protocol::SERIAL_CHUNK_SIZE,
         "serial",

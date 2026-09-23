@@ -25,7 +25,6 @@ use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::MacosLauncher;
 use tracing::{error, info, warn};
-use tracing_subscriber;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static BACKGROUND_MODE: AtomicBool = AtomicBool::new(false);

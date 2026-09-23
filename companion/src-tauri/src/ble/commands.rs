@@ -97,6 +97,7 @@ pub async fn authenticate_ble_device(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn submit_ble_setup(
     device_id: String,
     device_name: String,
@@ -221,6 +222,7 @@ pub async fn update_firmware_ble(
 pub async fn download_and_update_firmware_ble(
     device_id: String,
     download_url: String,
+    expected_sha256: String,
     app: AppHandle,
     store: State<'_, BleDeviceStore>,
 ) -> Result<(), String> {
@@ -228,7 +230,15 @@ pub async fn download_and_update_firmware_ble(
         .await
         .map_err(|error| log_string_error("firmware update connect failed", error, "ble"))?;
     let transport = Transport::Ble(connection);
-    commands::do_download_and_update_firmware(&transport, &download_url, &app, BLE_CHUNK_SIZE, "ble").await
+    commands::do_download_and_update_firmware(
+        &transport,
+        &download_url,
+        &expected_sha256,
+        &app,
+        BLE_CHUNK_SIZE,
+        "ble",
+    )
+    .await
 }
 
 #[tauri::command]
