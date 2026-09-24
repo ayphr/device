@@ -278,11 +278,12 @@ pub async fn do_download_and_update_firmware(
         let response = ureq::get(&url)
             .call()
             .map_err(|error| format!("Failed to download firmware: {}", error))?;
-        let mut bytes = Vec::new();
-        response
-            .into_reader()
-            .read_to_end(&mut bytes)
+        
+        let bytes = response
+            .into_body()
+            .read_to_vec()
             .map_err(|error| format!("Failed to read firmware data: {}", error))?;
+            
         Ok(bytes)
     })
     .await

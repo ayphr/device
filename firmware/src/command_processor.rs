@@ -12,9 +12,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::config::{DeviceSetup, DeviceSetupData};
 
-/// Version of this firmware crate. `ayphr_protocol::FIRMWARE_VERSION` resolves
-/// to the *shared* crate's version, which is never bumped by the release
-/// pipeline, so the firmware must report its own package version instead.
 const FIRMWARE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 static WIFI_RECONNECT_REQUESTED: AtomicBool = AtomicBool::new(false);
