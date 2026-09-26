@@ -27,6 +27,8 @@ pub fn run_loop(uart: &UartDriver<'_>, setup: &DeviceSetup) {
                 "Serial frame payload too large: {} bytes (max {})",
                 payload_len, MAX_PAYLOAD_LEN
             );
+            let _ = uart.clear_rx();
+            std::thread::sleep(Duration::from_millis(50));
             continue;
         }
 

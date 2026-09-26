@@ -51,9 +51,11 @@ export default function AuthPage({ device, onBack, onAuthenticated }: Readonly<A
       });
     } catch (invokeError) {
       const message =
-        invokeError instanceof Error
-          ? invokeError.message
-          : 'Authentication failed. Check the device password and try again.';
+        typeof invokeError === 'string'
+          ? invokeError
+          : invokeError instanceof Error
+            ? invokeError.message
+            : 'Authentication failed. Check the device password and try again.';
       setError(message);
     } finally {
       setIsSubmitting(false);

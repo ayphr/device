@@ -48,7 +48,7 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
                 .contains_key(&FIRMWARE_MANUFACTURER_ID);
             let has_firmware_service_uuid = advertised_service_uuids
                 .iter()
-                .any(|uuid| uuid == FIRMWARE_SERVICE_UUID);
+                .any(|uuid| uuid.eq_ignore_ascii_case(FIRMWARE_SERVICE_UUID));
 
             if !has_firmware_manufacturer_marker || !has_firmware_service_uuid {
                 continue;
@@ -115,7 +115,7 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
             };
 
             upsert_live_peripheral(&store, &peripheral_id, peripheral.clone());
-            seen_devices.insert(address, (snapshot, now));
+            seen_devices.insert(peripheral_id, (snapshot, now));
         }
 
         seen_devices.retain(|_, (_, seen_at)| seen_at.elapsed() <= DEVICE_RETENTION_WINDOW);

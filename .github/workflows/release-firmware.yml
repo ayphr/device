@@ -40,15 +40,15 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libclang-dev dfu-util python3 python3-pip
+          sudo apt-get install -y cmake ninja-build libclang-dev dfu-util python3 python3-pip esptool
 
       - name: Setup Espressif Rust Toolchain (RISC-V)
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cargo install espup
-          cargo install ldproxy
+          command -v espup >/dev/null 2>&1 || cargo install espup --locked
+          command -v ldproxy >/dev/null 2>&1 || cargo install ldproxy --locked
           rustup toolchain install nightly-2026-04-15 --profile minimal --component rust-src --component rustfmt
           espup install -t esp32c3
           rustup toolchain link esp "$(rustup which --toolchain nightly-2026-04-15 rustc | xargs dirname | xargs dirname)"

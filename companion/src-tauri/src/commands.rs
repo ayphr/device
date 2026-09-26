@@ -328,3 +328,22 @@ pub async fn do_ota_rollback(transport: &Transport) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[tauri::command]
+pub async fn fetch_firmware_release_metadata() -> Result<crate::types::FirmwareReleaseMetadata, String> {
+    tokio::task::spawn_blocking(|| {
+        let response = ureq::get("https://github.com/ayphr/device/releases/latest/download/version.json")
+            .call()
+            .map_err(|error| format!("Failed to fetch firmware release metadata: {error}"))?;
+        let bytes = response
+            .into_body()
+            .read_to_vec()
+            .map_err(|error| format!("Failed to read release metadata: {error}"))?;
+        let metadata: crate::types::FirmwareReleaseMetadata = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("Failed to parse release metadata: {error}"))?;
+        Ok(metadata)
+    })
+    .await
+    .map_err(|error| format!("Task join error: {error}"))?
+}
+

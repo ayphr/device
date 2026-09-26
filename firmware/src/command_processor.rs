@@ -68,8 +68,8 @@ fn process_request(setup: &DeviceSetup, data: &[u8], bypass_auth: bool) -> Vec<u
         COMMAND_UPDATE_WIFI => handle_update_wifi(setup, data, &mut cursor, bypass_auth),
         COMMAND_GET_FIRMWARE_INFO => handle_get_firmware_info(),
         COMMAND_OTA_BEGIN => handle_ota_begin(setup, data, &mut cursor, bypass_auth),
-        COMMAND_OTA_DATA => handle_ota_data(data, &mut cursor),
-        COMMAND_OTA_END => handle_ota_end(),
+        COMMAND_OTA_DATA => handle_ota_data(setup, data, &mut cursor, bypass_auth),
+        COMMAND_OTA_END => handle_ota_end(setup, bypass_auth),
         COMMAND_OTA_ROLLBACK => handle_ota_rollback(setup, bypass_auth),
         _ => vec![RESPONSE_ERROR],
     }
@@ -402,7 +402,19 @@ fn handle_ota_begin(
     }
 }
 
-fn handle_ota_data(data: &[u8], cursor: &mut usize) -> Vec<u8> {
+fn handle_ota_data(
+    setup: &DeviceSetup,
+    data: &[u8],
+    cursor: &mut usize,
+    bypass_auth: bool,
+) -> Vec<u8> {
+    {
+        let state = setup.lock_state();
+        if !bypass_auth && state.data.configured && !state.authenticated {
+            return vec![RESPONSE_AUTH_FAILED];
+        }
+    }
+
     if *cursor + 4 > data.len() {
         return vec![RESPONSE_ERROR];
     }
@@ -418,7 +430,14 @@ fn handle_ota_data(data: &[u8], cursor: &mut usize) -> Vec<u8> {
     }
 }
 
-fn handle_ota_end() -> Vec<u8> {
+fn handle_ota_end(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
+    {
+        let state = setup.lock_state();
+        if !bypass_auth && state.data.configured && !state.authenticated {
+            return vec![RESPONSE_AUTH_FAILED];
+        }
+    }
+
     match crate::ota::end() {
         Ok(()) => vec![RESPONSE_OTA_END_OK],
         Err(error) => {

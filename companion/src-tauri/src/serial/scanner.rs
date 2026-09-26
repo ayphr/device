@@ -30,11 +30,11 @@ fn is_likely_non_device_port(port_name: &str) -> bool {
 
 pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Result<(), String> {
     let mut previous_ports: HashSet<String> = HashSet::new();
+    let mut seen_devices: HashMap<String, (SerialDeviceSnapshot, Instant)> = HashMap::new();
 
     loop {
         let now = Instant::now();
         let ports = serialport::available_ports().map_err(|error| error.to_string())?;
-        let mut seen_devices: HashMap<String, (SerialDeviceSnapshot, Instant)> = HashMap::new();
         let mut seen_ports = HashSet::new();
 
         let cached_auth: Vec<String> = {

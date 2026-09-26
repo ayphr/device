@@ -88,6 +88,9 @@ fn read_frame(port: &mut dyn SerialPort) -> Result<Vec<u8>, String> {
     port.read_exact(&mut len_buf)
         .map_err(|error| format!("Failed to read serial frame length: {error}"))?;
     let len = u16::from_le_bytes(len_buf) as usize;
+    if len > 8192 {
+        return Err(format!("Serial frame payload length {len} exceeds max limit of 8192 bytes"));
+    }
     let mut payload = vec![0u8; len];
     port.read_exact(&mut payload)
         .map_err(|error| format!("Failed to read serial frame payload: {error}"))?;

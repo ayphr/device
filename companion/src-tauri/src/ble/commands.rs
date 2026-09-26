@@ -260,6 +260,7 @@ pub async fn disconnect_ble_device(
     store: State<'_, BleDeviceStore>,
 ) -> Result<(), String> {
     let connection = {
+        store.authenticated_cache.lock().unwrap().remove(&device_id);
         let mut guard = store.connections.lock().unwrap();
         guard.remove(&device_id)
     };
@@ -362,11 +363,22 @@ async fn ensure_connected(
         guard.contains_key(&device_id)
     };
 
+    let initial_setup_complete = {
+        let devices = store.devices.lock().unwrap();
+        devices
+            .iter()
+            .find(|d| d.id == device_id)
+            .map(|d| d.setup_complete)
+            .unwrap_or(false)
+    };
+
+    let _ = peripheral.subscribe(&tx_characteristic).await;
+
     Ok(ActiveBleConnection {
         peripheral,
         rx_characteristic,
         tx_characteristic,
-        setup_complete: true,
+        setup_complete: initial_setup_complete,
         authenticated,
         command_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
     })

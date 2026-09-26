@@ -76,18 +76,22 @@ function compareVersions(a: string, b: string): number {
 }
 
 async function fetchFirmwareReleaseMetadata(): Promise<FirmwareReleaseMetadata> {
-  const metadataResponse = await fetch(
-    'https://github.com/ayphr/device/releases/latest/download/version.json',
-  );
-  if (!metadataResponse.ok) throw new Error('Failed to fetch release metadata');
-  return (await metadataResponse.json()) as FirmwareReleaseMetadata;
+  try {
+    return await invoke<FirmwareReleaseMetadata>('fetch_firmware_release_metadata');
+  } catch {
+    const metadataResponse = await fetch(
+      'https://github.com/ayphr/device/releases/latest/download/version.json',
+    );
+    if (!metadataResponse.ok) throw new Error('Failed to fetch release metadata');
+    return (await metadataResponse.json()) as FirmwareReleaseMetadata;
+  }
 }
 
 export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>) {
   const [activeSection, setActiveSection] = useState<DeviceSection>('general');
   const [isRestarting, setIsRestarting] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
-  const [isResetting, setIsResetResetting] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -169,7 +173,7 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
   };
 
   const handleFactoryReset = async () => {
-    setIsResetResetting(true);
+    setIsResetting(true);
     try {
       await invoke(device.transport === 'serial' ? 'factory_reset_serial_device' : 'factory_reset_ble_device', {
         deviceId: device.id,
@@ -178,7 +182,7 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
     } catch (error) {
       console.error('Failed to factory reset device:', error);
     } finally {
-      setIsResetResetting(false);
+      setIsResetting(false);
       setIsResetDialogOpen(false);
     }
   };

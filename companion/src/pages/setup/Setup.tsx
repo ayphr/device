@@ -66,7 +66,7 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
   const canContinue =
     step === 'intro' ||
     (step === 'name' && deviceName.trim().length > 0) ||
-    (step === 'wifi' && (skipWifiSetup || (wifiSsid.trim().length > 0 && wifiPassword.trim().length > 0))) ||
+    (step === 'wifi' && (skipWifiSetup || wifiSsid.trim().length > 0)) ||
     (step === 'password' && (disableAuthentication || devicePassword.trim().length >= 8)) ||
     (step === 'terms' && agreedToTos) ||
     step === 'review';

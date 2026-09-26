@@ -92,3 +92,67 @@ pub fn log_string_error(context: &str, error: impl std::fmt::Display, prefix: &s
     tracing::error!("[{}] {}: {}", prefix, context, message);
     message
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_bytes() {
+        assert_eq!(format_bytes(&[0x01, 0x0A, 0xFF]), "01 0a ff");
+        assert_eq!(format_bytes(&[]), "");
+    }
+
+    #[test]
+    fn test_parse_status_response_valid() {
+        let name = "My Device";
+        let mut payload = vec![
+            RESPONSE_STATUS,
+            1, // setup_complete
+            1, // authenticated
+            1, // auth_required
+            1, // wifi_required
+            1, // wifi_configured
+            name.len() as u8,
+        ];
+        payload.extend_from_slice(name.as_bytes());
+
+        let parsed = parse_status_response(&payload).unwrap();
+        assert!(parsed.setup_complete);
+        assert!(parsed.authenticated);
+        assert!(parsed.auth_required);
+        assert!(parsed.wifi_required);
+        assert_eq!(parsed.device_name, "My Device");
+    }
+
+    #[test]
+    fn test_parse_status_response_invalid_tag() {
+        let payload = vec![0x99, 1, 1, 1, 1, 1, 0];
+        assert!(parse_status_response(&payload).is_err());
+    }
+
+    #[test]
+    fn test_parse_status_response_truncated() {
+        let payload = vec![RESPONSE_STATUS, 1, 1, 1, 1, 1, 10, b'a', b'b'];
+        assert!(parse_status_response(&payload).is_err());
+    }
+
+    #[test]
+    fn test_parse_firmware_info_response_valid() {
+        let version = "0.1.0";
+        let hw_rev = "rev1";
+        let uptime: u32 = 3600;
+
+        let mut payload = vec![RESPONSE_FIRMWARE_INFO];
+        payload.push(version.len() as u8);
+        payload.extend_from_slice(version.as_bytes());
+        payload.push(hw_rev.len() as u8);
+        payload.extend_from_slice(hw_rev.as_bytes());
+        payload.extend_from_slice(&uptime.to_le_bytes());
+
+        let parsed = parse_firmware_info_response(&payload).unwrap();
+        assert_eq!(parsed.version, "0.1.0");
+        assert_eq!(parsed.hardware_rev, "rev1");
+        assert_eq!(parsed.uptime_secs, 3600);
+    }
+}

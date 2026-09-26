@@ -58,6 +58,9 @@ pub fn upsert_connection(store: &BleDeviceStore, device_id: &str, connection: Ac
     if connection.authenticated {
         let mut cache_guard = store.authenticated_cache.lock().unwrap();
         cache_guard.insert(device_id.to_string(), Instant::now());
+    } else {
+        let mut cache_guard = store.authenticated_cache.lock().unwrap();
+        cache_guard.remove(device_id);
     }
 
     let mut guard = store.connections.lock().unwrap();

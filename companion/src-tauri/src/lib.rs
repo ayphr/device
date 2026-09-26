@@ -182,7 +182,8 @@ pub fn run() {
             update_firmware_serial,
             download_and_update_firmware_serial,
             ota_rollback_serial,
-            set_background_mode
+            set_background_mode,
+            commands::fetch_firmware_release_metadata
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

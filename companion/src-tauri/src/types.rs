@@ -42,3 +42,11 @@ pub struct FirmwareUpdateProgress {
     pub progress: f32,
     pub message: String,
 }
+
+#[derive(Clone, serde::Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FirmwareReleaseMetadata {
+    pub version: Option<String>,
+    pub binary_url: Option<String>,
+    pub sha256: Option<String>,
+}
