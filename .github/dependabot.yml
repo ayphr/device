@@ -5,23 +5,47 @@
 
 version: 2
 updates:
-  - package-ecosystem: "cargo" # See documentation for possible values
-    directory: "/firmware" # Location of package manifests
+  - package-ecosystem: "cargo"
+    directory: "/firmware"
     schedule:
       interval: "daily"
+    groups:
+      cargo-dependencies:
+        patterns:
+          - "*"
+
   - package-ecosystem: "cargo"
     directory: "/shared"
     schedule:
       interval: "daily"
+    groups:
+      cargo-dependencies:
+        patterns:
+          - "*"
+
   - package-ecosystem: "cargo"
     directory: "/companion/src-tauri"
     schedule:
       interval: "daily"
+    groups:
+      cargo-dependencies:
+        patterns:
+          - "*"
+
   - package-ecosystem: "npm"
     directory: "/companion"
     schedule:
       interval: "weekly"
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      actions-dependencies:
+        patterns:
+          - "*"
