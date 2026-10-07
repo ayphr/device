@@ -1,0 +1,89 @@
+name: App Cache Warm
+
+# Caches are ref-scoped: a cache saved on a tag can never be read by another
+# tag, so tag-triggered releases (release-app.yml) cannot save a reusable Rust
+# build cache. This workflow builds the release dependency set on main instead,
+# and the release workflow restores from the main-branch scope.
+#
+# Keep the matrix and the Rust Cache inputs in lockstep with release-app.yml,
+# and do not add any workflow-level env: CARGO*/RUST*/CC* vars are hashed into
+# the cache key and would desync the keys.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'companion/src-tauri/**'
+      - 'shared/**'
+      - '.github/workflows/release-app.yml'
+      - '.github/workflows/warm-app-cache.yml'
+  # Twice a week: refreshes the rustc/env digest and keeps the cache inside
+  # GitHub's 7-day eviction window even when no Rust files change.
+  schedule:
+    - cron: '0 5 * * 1,4'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warm-app-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    name: Warm ${{ matrix.platform }} (${{ matrix.target || 'default' }})
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ""
+            rust-targets: ""
+            apt-packages: >-
+              libwebkit2gtk-4.1-dev
+              libappindicator3-dev
+              librsvg2-dev
+              patchelf
+              pkg-config
+              libudev-dev
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+            rust-targets: aarch64-apple-darwin
+            apt-packages: ""
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+            rust-targets: x86_64-apple-darwin
+            apt-packages: ""
+          - platform: windows-latest
+            args: ""
+            rust-targets: ""
+            apt-packages: ""
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: companion/src-tauri -> target
+          shared-key: app-release-${{ matrix.target || 'host' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt-packages }}
+
+      - name: Build release dependencies
+        run: cargo build --release --manifest-path companion/src-tauri/Cargo.toml ${{ matrix.args }}

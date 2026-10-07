@@ -169,6 +169,13 @@ pub fn run() {
             set_background_mode,
             commands::fetch_firmware_release_metadata
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                show_main_window(app);
+            }
+            let _ = (app, event);
+        });
 }
