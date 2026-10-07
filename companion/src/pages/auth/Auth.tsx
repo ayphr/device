@@ -3,20 +3,13 @@ import { invoke } from '@tauri-apps/api/core';
 import { IconArrowLeft } from '@tabler/icons-react';
 import { Button, Card, CardBody, CardFooter, CardHeader, Input } from '../../components/common';
 import { type DeviceInfo } from '../../lib/devices';
+import { type DeviceConnectionState } from '../../types';
 import styles from './Auth.module.css';
 
 interface AuthPageProps {
   readonly device: DeviceInfo;
   readonly onBack: () => void;
   readonly onAuthenticated: (device: DeviceInfo) => void;
-}
-
-interface BleConnectionState {
-  connected: boolean;
-  authenticated: boolean;
-  authRequired: boolean;
-  setupComplete: boolean;
-  deviceName: string;
 }
 
 export default function AuthPage({ device, onBack, onAuthenticated }: Readonly<AuthPageProps>) {
@@ -36,7 +29,7 @@ export default function AuthPage({ device, onBack, onAuthenticated }: Readonly<A
     try {
       const command =
         device.transport === 'serial' ? 'authenticate_serial_device' : 'authenticate_ble_device';
-      const connection = await invoke<BleConnectionState>(command, {
+      const connection = await invoke<DeviceConnectionState>(command, {
         deviceId: device.id,
         password,
       });

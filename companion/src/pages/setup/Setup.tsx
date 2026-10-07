@@ -2,16 +2,9 @@ import { useState } from 'react';
 import { IconArrowLeft, IconCheck, IconDeviceDesktop, IconShieldCheck, IconWifi } from '@tabler/icons-react';
 import { Button, Card, CardBody, CardFooter, CardHeader, Input, Toggle } from '../../components/common';
 import { type DeviceInfo } from '../../lib/devices';
+import { type DeviceConnectionState } from '../../types';
 import { invoke } from '@tauri-apps/api/core';
 import styles from './Setup.module.css';
-
-interface BleConnectionState {
-  connected: boolean;
-  authenticated: boolean;
-  authRequired: boolean;
-  setupComplete: boolean;
-  deviceName: string;
-}
 
 interface SetupPageProps {
   readonly device: DeviceInfo;
@@ -98,7 +91,7 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
 
     try {
       const command = device.transport === 'serial' ? 'submit_serial_setup' : 'submit_ble_setup';
-      const connection = await invoke<BleConnectionState>(command, {
+      const connection = await invoke<DeviceConnectionState>(command, {
         deviceId: device.id,
         deviceName: deviceName.trim() || device.name,
         wifiSsid: wifiSsid.trim(),

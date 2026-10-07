@@ -1,17 +1,16 @@
 use ayphr_protocol::{
     append_field, COMMAND_APPLY_SETUP, COMMAND_CHANGE_PASSWORD, COMMAND_FACTORY_RESET,
-    COMMAND_OTA_BEGIN, COMMAND_OTA_DATA, COMMAND_OTA_END, COMMAND_OTA_ROLLBACK, COMMAND_RESTART,
-    COMMAND_UPDATE_WIFI, RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_FACTORY_RESET_OK,
-    RESPONSE_OTA_BEGIN_OK, RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK,
+    COMMAND_OTA_BEGIN, COMMAND_OTA_DATA, COMMAND_OTA_END, COMMAND_OTA_ROLLBACK,
+    COMMAND_RENAME_DEVICE, COMMAND_RESTART, COMMAND_UPDATE_WIFI, MAX_DEVICE_NAME_LEN,
+    RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_FACTORY_RESET_OK, RESPONSE_OTA_BEGIN_OK,
+    RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RENAME_OK,
     RESPONSE_RESTART_OK, RESPONSE_SETUP_OK, RESPONSE_UPDATE_WIFI_OK,
 };
 use tauri::{AppHandle, Emitter};
 
-use crate::protocol::{log_string_error, format_bytes};
+use crate::protocol::{format_bytes, log_string_error};
 use crate::transport::Transport;
-use crate::types::{
-    BleConnectionState, FirmwareInfoResult, FirmwareUpdateProgress, ParsedStatus,
-};
+use crate::types::{BleConnectionState, FirmwareInfoResult, FirmwareUpdateProgress, ParsedStatus};
 
 pub fn build_connection_state(status: &ParsedStatus) -> BleConnectionState {
     BleConnectionState {
@@ -153,6 +152,37 @@ pub async fn do_update_wifi(
     Ok(())
 }
 
+pub async fn do_rename_device(transport: &Transport, name: &str) -> Result<(), String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("Device name cannot be empty".to_string());
+    }
+    if trimmed.len() > MAX_DEVICE_NAME_LEN {
+        return Err(format!(
+            "Device name must be at most {} bytes",
+            MAX_DEVICE_NAME_LEN
+        ));
+    }
+
+    let mut command = vec![COMMAND_RENAME_DEVICE];
+    append_field(&mut command, trimmed)
+        .map_err(|e| log_string_error("rename encoding failed", e, "shared"))?;
+
+    let response = transport
+        .send_command(command)
+        .await
+        .map_err(|e| log_string_error("rename command failed", e, "shared"))?;
+
+    if response.first().copied() != Some(RESPONSE_RENAME_OK) {
+        return Err(log_string_error(
+            "rename rejected",
+            "Device rejected rename command",
+            "shared",
+        ));
+    }
+    Ok(())
+}
+
 pub async fn do_get_firmware_info(transport: &Transport) -> Result<FirmwareInfoResult, String> {
     let info = transport
         .query_firmware_info()
@@ -284,19 +314,23 @@ pub async fn do_download_and_update_firmware(
             .get(&url)
             .call()
             .map_err(|error| format!("Failed to download firmware: {}", error))?;
-        
+
         let bytes = response
             .into_body()
             .read_to_vec()
             .map_err(|error| format!("Failed to read firmware data: {}", error))?;
-            
+
         Ok(bytes)
     })
     .await
     .map_err(|error| format!("Task join error: {}", error))?
     .map_err(|error| log_string_error("firmware download failed", error, label))?;
 
-    tracing::info!("[{}] downloaded firmware: {} bytes", label, firmware_data.len());
+    tracing::info!(
+        "[{}] downloaded firmware: {} bytes",
+        label,
+        firmware_data.len()
+    );
 
     let actual_sha256 = sha256_hex(&firmware_data);
     if expected_sha256.is_empty() || !actual_sha256.eq_ignore_ascii_case(&expected_sha256) {
@@ -313,10 +347,7 @@ pub async fn do_download_and_update_firmware(
 fn sha256_hex(data: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let digest = Sha256::digest(data);
-    digest
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 pub async fn do_ota_rollback(transport: &Transport) -> Result<(), String> {
@@ -336,7 +367,8 @@ pub async fn do_ota_rollback(transport: &Transport) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn fetch_firmware_release_metadata() -> Result<crate::types::FirmwareReleaseMetadata, String> {
+pub async fn fetch_firmware_release_metadata(
+) -> Result<crate::types::FirmwareReleaseMetadata, String> {
     tokio::task::spawn_blocking(|| {
         let agent = ureq::Agent::new_with_config(
             ureq::config::Config::builder()
@@ -358,4 +390,3 @@ pub async fn fetch_firmware_release_metadata() -> Result<crate::types::FirmwareR
     .await
     .map_err(|error| format!("Task join error: {error}"))?
 }
-

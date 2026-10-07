@@ -4,7 +4,10 @@ use crate::types::{ParsedFirmwareInfo, ParsedStatus};
 
 pub fn parse_status_response(payload: &[u8]) -> Result<ParsedStatus, String> {
     if payload.len() < 7 || payload[0] != RESPONSE_STATUS {
-        tracing::warn!("[protocol] invalid status payload={}", format_bytes(payload));
+        tracing::warn!(
+            "[protocol] invalid status payload={}",
+            format_bytes(payload)
+        );
         return Err("Invalid status response payload".to_string());
     }
 
@@ -19,11 +22,10 @@ pub fn parse_status_response(payload: &[u8]) -> Result<ParsedStatus, String> {
         return Err("Status response is missing device name bytes".to_string());
     }
 
-    let device_name = String::from_utf8(payload[7..7 + name_length].to_vec())
-        .map_err(|error| {
-            tracing::warn!("[protocol] device name decode failed: {}", error);
-            "Device name is not valid UTF-8".to_string()
-        })?;
+    let device_name = String::from_utf8(payload[7..7 + name_length].to_vec()).map_err(|error| {
+        tracing::warn!("[protocol] device name decode failed: {}", error);
+        "Device name is not valid UTF-8".to_string()
+    })?;
 
     Ok(ParsedStatus {
         setup_complete,
@@ -36,7 +38,10 @@ pub fn parse_status_response(payload: &[u8]) -> Result<ParsedStatus, String> {
 
 pub fn parse_firmware_info_response(payload: &[u8]) -> Result<ParsedFirmwareInfo, String> {
     if payload.len() < 2 || payload[0] != RESPONSE_FIRMWARE_INFO {
-        tracing::warn!("[protocol] invalid firmware info payload={}", format_bytes(payload));
+        tracing::warn!(
+            "[protocol] invalid firmware info payload={}",
+            format_bytes(payload)
+        );
         return Err("Invalid firmware info response payload".to_string());
     }
 

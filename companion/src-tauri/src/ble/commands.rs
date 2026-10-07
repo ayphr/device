@@ -4,15 +4,14 @@ use tauri::{AppHandle, State};
 use tokio::time::{sleep, Duration};
 use tracing::warn;
 
-use ayphr_protocol::{
-    COMMAND_AUTHENTICATE, RESPONSE_AUTH_FAILED, RESPONSE_AUTH_OK,
-    FIRMWARE_RX_CHARACTERISTIC_UUID, FIRMWARE_SERVICE_UUID, FIRMWARE_TX_CHARACTERISTIC_UUID,
-    BLE_CHUNK_SIZE,
-};
 use crate::commands;
 use crate::protocol::log_string_error;
 use crate::transport::Transport;
 use crate::types::BleConnectionState;
+use ayphr_protocol::{
+    BLE_CHUNK_SIZE, COMMAND_AUTHENTICATE, FIRMWARE_RX_CHARACTERISTIC_UUID, FIRMWARE_SERVICE_UUID,
+    FIRMWARE_TX_CHARACTERISTIC_UUID, RESPONSE_AUTH_FAILED, RESPONSE_AUTH_OK,
+};
 
 use super::protocol::parse_uuid;
 use super::scanner::get_primary_adapter;
@@ -72,7 +71,22 @@ pub async fn authenticate_ble_device(
             upsert_connection(&store, &device_id, connection);
             refresh_snapshots_with_connection_state(&store);
             emit_devices(&app, &store);
-            return Err(log_string_error("authenticate rejected", "Invalid device password", "ble"));
+            return Err(log_string_error(
+                "authenticate rejected",
+                "Invalid device password",
+                "ble",
+            ));
+        }
+        Some(ayphr_protocol::RESPONSE_AUTH_LOCKED) => {
+            connection.authenticated = false;
+            upsert_connection(&store, &device_id, connection);
+            refresh_snapshots_with_connection_state(&store);
+            emit_devices(&app, &store);
+            return Err(log_string_error(
+                "authenticate locked",
+                "Too many failed attempts. The device is temporarily locked; try again in a minute.",
+                "ble",
+            ));
         }
         _ => {
             return Err(log_string_error(
@@ -174,6 +188,47 @@ pub async fn change_ble_device_password(
         .map_err(|error| log_string_error("change password connect failed", error, "ble"))?;
     let transport = Transport::Ble(connection);
     commands::do_change_password(&transport, &current_password, &new_password).await
+}
+
+#[tauri::command]
+pub async fn rename_ble_device(
+    device_id: String,
+    name: String,
+    app: AppHandle,
+    store: State<'_, BleDeviceStore>,
+) -> Result<(), String> {
+    let connection = ensure_connected(device_id.clone(), &store)
+        .await
+        .map_err(|error| log_string_error("rename connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_rename_device(&transport, &name).await?;
+
+    let status = transport
+        .query_status()
+        .await
+        .map_err(|error| log_string_error("post-rename status query failed", error, "ble"))?;
+    refresh_ble_snapshot(&app, &store, &device_id, &status);
+    Ok(())
+}
+
+/// Updates the cached snapshot after a status change (rename, setup, auth)
+/// so the device grid reflects the new name/state without waiting for the
+/// next scan tick.
+fn refresh_ble_snapshot(
+    app: &AppHandle,
+    store: &BleDeviceStore,
+    device_id: &str,
+    status: &crate::types::ParsedStatus,
+) {
+    {
+        let mut devices = store.devices.lock().unwrap();
+        if let Some(device) = devices.iter_mut().find(|device| device.id == device_id) {
+            device.name = status.device_name.clone();
+            device.setup_complete = status.setup_complete;
+        }
+    }
+    refresh_snapshots_with_connection_state(store);
+    emit_devices(app, store);
 }
 
 #[tauri::command]
@@ -288,7 +343,9 @@ async fn ensure_connected(
             .peripheral
             .is_connected()
             .await
-            .map_err(|error| log_string_error("checking existing connection failed", error, "ble"))?
+            .map_err(|error| {
+                log_string_error("checking existing connection failed", error, "ble")
+            })?
         {
             return Ok(connection);
         }
@@ -300,17 +357,22 @@ async fn ensure_connected(
     let peripheral = if let Some(peripheral) = get_live_peripheral(store, &device_id) {
         peripheral
     } else {
-        warn!("[ble] cached peripheral missing for {} , falling back to rediscovery", device_id);
+        warn!(
+            "[ble] cached peripheral missing for {} , falling back to rediscovery",
+            device_id
+        );
         discover_peripheral(&device_id).await.ok_or_else(|| {
-            log_string_error("device lookup failed", "Device is not currently discoverable", "ble")
+            log_string_error(
+                "device lookup failed",
+                "Device is not currently discoverable",
+                "ble",
+            )
         })?
     };
 
-    if !peripheral
-        .is_connected()
-        .await
-        .map_err(|error| log_string_error("checking peripheral connected state failed", error, "ble"))?
-    {
+    if !peripheral.is_connected().await.map_err(|error| {
+        log_string_error("checking peripheral connected state failed", error, "ble")
+    })? {
         peripheral
             .connect()
             .await
@@ -347,7 +409,11 @@ async fn ensure_connected(
         .find(|characteristic| characteristic.uuid == rx_uuid)
         .cloned()
         .ok_or_else(|| {
-            log_string_error("characteristic lookup failed", "Missing firmware RX characteristic", "ble")
+            log_string_error(
+                "characteristic lookup failed",
+                "Missing firmware RX characteristic",
+                "ble",
+            )
         })?;
 
     let tx_characteristic = characteristics
@@ -355,7 +421,11 @@ async fn ensure_connected(
         .find(|characteristic| characteristic.uuid == tx_uuid)
         .cloned()
         .ok_or_else(|| {
-            log_string_error("characteristic lookup failed", "Missing firmware TX characteristic", "ble")
+            log_string_error(
+                "characteristic lookup failed",
+                "Missing firmware TX characteristic",
+                "ble",
+            )
         })?;
 
     let authenticated = {
@@ -398,7 +468,11 @@ async fn discover_peripheral(device_id: &str) -> Option<Peripheral> {
         let peripherals = match adapter.peripherals().await {
             Ok(peripherals) => peripherals,
             Err(error) => {
-                tracing::warn!("[ble] peripheral enumeration attempt {} failed: {}", attempt, error);
+                tracing::warn!(
+                    "[ble] peripheral enumeration attempt {} failed: {}",
+                    attempt,
+                    error
+                );
                 sleep(DISCOVERY_RETRY_DELAY).await;
                 continue;
             }
@@ -414,12 +488,20 @@ async fn discover_peripheral(device_id: &str) -> Option<Peripheral> {
                 }
                 Ok(None) => continue,
                 Err(error) => {
-                    tracing::warn!("[ble] property lookup attempt {} failed: {}", attempt, error);
+                    tracing::warn!(
+                        "[ble] property lookup attempt {} failed: {}",
+                        attempt,
+                        error
+                    );
                     continue;
                 }
             }
         }
-        tracing::info!("[ble] device {} not found on discovery attempt {}", device_id, attempt);
+        tracing::info!(
+            "[ble] device {} not found on discovery attempt {}",
+            device_id,
+            attempt
+        );
         sleep(DISCOVERY_RETRY_DELAY).await;
     }
 

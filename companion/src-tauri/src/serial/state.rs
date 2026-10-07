@@ -1,17 +1,12 @@
 use serde::Serialize;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 use super::constants::SERIAL_DEVICES_UPDATED_EVENT;
 
-const AUTH_CACHE_TIMEOUT: Duration = Duration::from_secs(600);
-
 #[derive(Clone, Default)]
 pub struct SerialDeviceStore {
     pub devices: Arc<Mutex<Vec<SerialDeviceSnapshot>>>,
-    pub authenticated_cache: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -36,35 +31,15 @@ pub struct SerialDeviceSnapshot {
     pub service_uuids: Vec<String>,
 }
 
-pub fn upsert_auth(store: &SerialDeviceStore, device_id: &str, authenticated: bool) {
-    if authenticated {
-        let mut cache = store.authenticated_cache.lock().unwrap();
-        cache.insert(device_id.to_string(), Instant::now());
-    } else {
-        let mut cache = store.authenticated_cache.lock().unwrap();
-        cache.remove(device_id);
-    }
-}
-
-pub fn is_authenticated(store: &SerialDeviceStore, device_id: &str) -> bool {
-    let cache = store.authenticated_cache.lock().unwrap();
-    cache
-        .get(device_id)
-        .map(|t| t.elapsed() < AUTH_CACHE_TIMEOUT)
-        .unwrap_or(false)
-}
-
-pub fn refresh_snapshots(store: &SerialDeviceStore) {
-    let auth_cache = {
-        let mut guard = store.authenticated_cache.lock().unwrap();
-        guard.retain(|_, last_auth| last_auth.elapsed() < AUTH_CACHE_TIMEOUT);
-        guard.keys().cloned().collect::<Vec<_>>()
-    };
-
+/// Replaces the cached snapshot for `device_id` when the port is still
+/// listed, so status changes show up without waiting for the next scan tick.
+pub fn update_snapshot<F>(store: &SerialDeviceStore, device_id: &str, mutate: F)
+where
+    F: FnOnce(&mut SerialDeviceSnapshot),
+{
     let mut devices = store.devices.lock().unwrap();
-    for device in &mut *devices {
-        device.authenticated = auth_cache.contains(&device.id);
-        device.connected = device.authenticated;
+    if let Some(device) = devices.iter_mut().find(|device| device.id == device_id) {
+        mutate(device);
     }
 }
 

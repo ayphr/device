@@ -1,5 +1,5 @@
 use esp32_nimble::{BLEAdvertisementData, BLEDevice, NimbleProperties};
-use log::info;
+use log::{info, warn};
 use std::sync::Arc;
 
 use ayphr_protocol::{
@@ -9,6 +9,56 @@ use ayphr_protocol::{
 
 use crate::command_processor;
 use crate::config::DeviceSetup;
+
+/// Builds the advertisement payload advertising the given device state.
+fn advertising_data(setup: &DeviceSetup, dev_name: &str) -> BLEAdvertisementData {
+    let service_uuid = esp32_nimble::uuid128!(FIRMWARE_SERVICE_UUID);
+
+    let mut adv_data = BLEAdvertisementData::new();
+    adv_data.name(dev_name);
+    adv_data.add_service_uuid(service_uuid);
+
+    let setup_complete_flag = if setup.is_configured() { 1u8 } else { 0u8 };
+    let mut mfg_data = Vec::new();
+    mfg_data.extend_from_slice(&FIRMWARE_MANUFACTURER_ID.to_le_bytes());
+    mfg_data.push(setup_complete_flag);
+    adv_data.manufacturer_data(&mfg_data);
+
+    adv_data
+}
+
+/// Re-applies the device name and advertisement payload so a rename or setup
+/// change is visible to scanners without a reboot. Best effort: failures are
+/// logged and the previous advertisement stays in place.
+pub fn refresh_advertising(setup: &DeviceSetup) {
+    let dev_name = setup.device_name_for_advertising();
+
+    if let Err(error) = BLEDevice::set_device_name(&dev_name) {
+        warn!("Failed to update BLE device name: {:?}", error);
+        return;
+    }
+
+    let mut adv_data = advertising_data(setup, &dev_name);
+
+    let advertising = BLEDevice::take().get_advertising();
+    let mut advertising = advertising.lock();
+
+    if advertising.is_advertising() {
+        if let Err(error) = advertising.stop() {
+            warn!("Failed to stop advertising before refresh: {:?}", error);
+            return;
+        }
+    }
+
+    if let Err(error) = advertising.set_data(&mut adv_data) {
+        warn!("Failed to apply refreshed advertisement data: {:?}", error);
+        return;
+    }
+
+    if let Err(error) = advertising.start() {
+        warn!("Failed to restart advertising after refresh: {:?}", error);
+    }
+}
 
 pub fn init(setup: Arc<DeviceSetup>) {
     let ble_device = BLEDevice::take();
@@ -54,15 +104,7 @@ pub fn init(setup: Arc<DeviceSetup>) {
     let dev_name = setup.device_name_for_advertising();
     BLEDevice::set_device_name(&dev_name).unwrap();
 
-    let mut adv_data = BLEAdvertisementData::new();
-    adv_data.name(&dev_name);
-    adv_data.add_service_uuid(service_uuid);
-
-    let setup_complete_flag = if setup.is_configured() { 1u8 } else { 0u8 };
-    let mut mfg_data = Vec::new();
-    mfg_data.extend_from_slice(&FIRMWARE_MANUFACTURER_ID.to_le_bytes());
-    mfg_data.push(setup_complete_flag);
-    adv_data.manufacturer_data(&mfg_data);
+    let mut adv_data = advertising_data(&setup, &dev_name);
 
     ble_advertising.lock().set_data(&mut adv_data).unwrap();
     ble_advertising.lock().start().unwrap();

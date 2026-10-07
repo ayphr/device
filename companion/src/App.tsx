@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { IconSettings, IconUserCircle } from '@tabler/icons-react';
-import { CurrentPage } from './types';
+import { CurrentPage, type DeviceConnectionState } from './types';
 import Home from './pages/home/Home';
 import StatsPage from './pages/stats/Stats';
 import SettingsPage from './pages/settings/Settings';
@@ -19,14 +19,6 @@ import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import styles from './App.module.css';
 import logo from './assets/logo.svg';
-
-interface BleConnectionState {
-  connected: boolean;
-  authenticated: boolean;
-  authRequired: boolean;
-  setupComplete: boolean;
-  deviceName: string;
-}
 
 function replaceDevicesForTransport(
   currentDevices: DeviceInfo[],
@@ -48,6 +40,7 @@ function App() {
   const [isSearchingForGeoDevices, setIsSearchingForGeoDevices] = useState(true);
   const [settings, setSettings] = useState<AppSettings>(() => loadAppSettings());
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isCheckingForUpdate, setIsCheckingForUpdate] = useState(false);
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
   const devicesTabRef = useRef<HTMLButtonElement | null>(null);
@@ -296,7 +289,7 @@ function App() {
     }
 
     try {
-      const connection = await invoke<BleConnectionState>(
+      const connection = await invoke<DeviceConnectionState>(
         device.transport === 'serial' ? 'connect_serial_device' : 'connect_ble_device',
         { deviceId: device.id },
       );
@@ -319,6 +312,14 @@ function App() {
       }
     } catch (error) {
       console.error('Failed to connect to device before routing', error);
+
+      setConnectionError(
+        typeof error === 'string'
+          ? error
+          : error instanceof Error
+            ? error.message
+            : 'Could not reach the device. Make sure it is powered on and nearby, then try again.',
+      );
 
       if (device.authenticated) {
         setPage('device');
@@ -363,6 +364,13 @@ function App() {
     );
     setSelectedDevice(updatedDevice);
     setPage('device');
+  };
+
+  const handleDeviceUpdated = (updatedDevice: DeviceInfo) => {
+    setDevices((currentDevices) =>
+      currentDevices.map((device) => (device.id === updatedDevice.id ? updatedDevice : device)),
+    );
+    setSelectedDevice(updatedDevice);
   };
 
   return (
@@ -475,7 +483,11 @@ function App() {
           />
         ) : null}
         {page === 'device' && selectedDevice ? (
-          <DevicePage device={selectedDevice} onBack={goBackToDevices} />
+          <DevicePage
+            device={selectedDevice}
+            onBack={goBackToDevices}
+            onDeviceUpdated={handleDeviceUpdated}
+          />
         ) : null}
       </main>
 
@@ -519,6 +531,21 @@ function App() {
             <Button onClick={installUpdate} isLoading={isInstallingUpdate}>
               Update now
             </Button>
+          </div>
+        </div>
+      </Modal>
+      <Modal
+        isOpen={connectionError !== null}
+        onClose={() => setConnectionError(null)}
+        title="Connection failed"
+        showCancel={false}
+        size="sm"
+      >
+        <div className={styles['update-modal__content']}>
+          <p className={styles['update-modal__copy']}>{connectionError}</p>
+
+          <div className={styles['update-modal__actions']}>
+            <Button onClick={() => setConnectionError(null)}>Dismiss</Button>
           </div>
         </div>
       </Modal>

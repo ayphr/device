@@ -72,7 +72,10 @@ fn main() -> anyhow::Result<()> {
             }
         };
 
-        info!("Serial transport ready on UART1 at {} baud", SERIAL_BAUD_RATE);
+        info!(
+            "Serial transport ready on UART1 at {} baud",
+            SERIAL_BAUD_RATE
+        );
         serial::run_loop(&uart, &serial_setup);
     });
 

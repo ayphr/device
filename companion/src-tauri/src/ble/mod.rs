@@ -1,5 +1,5 @@
-pub mod constants;
 pub mod commands;
+pub mod constants;
 pub mod protocol;
 pub mod scanner;
 pub mod state;

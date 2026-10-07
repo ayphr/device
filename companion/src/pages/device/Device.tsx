@@ -5,7 +5,9 @@ import {
   IconDeviceDesktop,
   IconInfoCircle,
   IconLock,
+  IconPencil,
   IconRefresh,
+  IconArrowBackUp,
   IconSettings,
   IconTrash,
   IconUpload,
@@ -17,11 +19,15 @@ import { formatLastSeen, formatRssi, formatUptime, rssiLabel, signalStrengthLabe
 import { Button, ConfirmDialog, Modal, Input } from '../../components/common';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { compareVersions, normalizeFirmwareVersion } from '../../lib/version';
+import type { FirmwareInfoResult, FirmwareReleaseMetadata, FirmwareUpdateProgress } from '../../types';
 import styles from './Device.module.css';
 
 interface DevicePageProps {
   readonly device: DeviceInfo;
   readonly onBack: () => void;
+  readonly onDeviceUpdated?: (device: DeviceInfo) => void;
 }
 
 type DeviceSection = 'general' | 'updates' | 'info';
@@ -32,48 +38,7 @@ const sections: Array<{ id: DeviceSection; label: string; icon: ComponentType<{ 
   { id: 'info', label: 'Info', icon: IconInfoCircle },
 ];
 
-interface FirmwareInfoResult {
-  version: string;
-  hardwareRev: string;
-  uptimeSecs: number;
-}
-
-interface FirmwareUpdateProgress {
-  step: string;
-  progress: number;
-  message: string;
-}
-
-interface FirmwareReleaseMetadata {
-  version?: string;
-  binaryUrl?: string;
-  sha256?: string;
-  body?: string;
-}
-
-function normalizeFirmwareVersion(version: string): string {
-  return version.replace(/^firmware-v/i, '').replace(/^v/i, '');
-}
-
-function compareVersions(a: string, b: string): number {
-  const toParts = (version: string) =>
-    version
-      .split('.')
-      .map((part) => {
-        const parsed = parseInt(part, 10);
-        return Number.isNaN(parsed) ? 0 : parsed;
-      });
-
-  const partsA = toParts(a);
-  const partsB = toParts(b);
-  const length = Math.max(partsA.length, partsB.length);
-
-  for (let index = 0; index < length; index += 1) {
-    const diff = (partsA[index] ?? 0) - (partsB[index] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-}
+const MAX_DEVICE_NAME_LENGTH = 64;
 
 async function fetchFirmwareReleaseMetadata(): Promise<FirmwareReleaseMetadata> {
   try {
@@ -87,11 +52,18 @@ async function fetchFirmwareReleaseMetadata(): Promise<FirmwareReleaseMetadata> 
   }
 }
 
-export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>) {
+export default function DevicePage({ device, onBack, onDeviceUpdated }: Readonly<DevicePageProps>) {
   const [activeSection, setActiveSection] = useState<DeviceSection>('general');
   const [isRestarting, setIsRestarting] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [controlError, setControlError] = useState<string | null>(null);
+
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState(device.name);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -110,6 +82,9 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
   const [firmwareProgress, setFirmwareProgress] = useState<FirmwareUpdateProgress | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState<{ version: string; body?: string } | null>(null);
   const [isCheckingFirmwareUpdate, setIsCheckingFirmwareUpdate] = useState(false);
+
+  const [isRollbackDialogOpen, setIsRollbackDialogOpen] = useState(false);
+  const [isRollingBack, setIsRollingBack] = useState(false);
 
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label ?? 'General';
 
@@ -161,19 +136,52 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
 
   const handleRestart = async () => {
     setIsRestarting(true);
+    setControlError(null);
     try {
       await invoke(device.transport === 'serial' ? 'restart_serial_device' : 'restart_ble_device', {
         deviceId: device.id,
       });
     } catch (error) {
       console.error('Failed to restart device:', error);
+      setControlError(typeof error === 'string' ? error : 'Failed to restart the device');
     } finally {
       setIsRestarting(false);
     }
   };
 
+  const handleRename = async () => {
+    const trimmedName = renameValue.trim();
+
+    if (trimmedName.length === 0) {
+      setRenameError('Device name cannot be empty.');
+      return;
+    }
+
+    if (trimmedName.length > MAX_DEVICE_NAME_LENGTH) {
+      setRenameError(`Device name must be ${MAX_DEVICE_NAME_LENGTH} characters or fewer.`);
+      return;
+    }
+
+    setIsRenaming(true);
+    setRenameError(null);
+
+    try {
+      const command = device.transport === 'serial' ? 'rename_serial_device' : 'rename_ble_device';
+      await invoke(command, { deviceId: device.id, name: trimmedName });
+
+      onDeviceUpdated?.({ ...device, name: trimmedName });
+      setIsRenameModalOpen(false);
+      setRenameValue(trimmedName);
+    } catch (error) {
+      setRenameError(typeof error === 'string' ? error : 'Failed to rename device');
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
   const handleFactoryReset = async () => {
     setIsResetting(true);
+    setControlError(null);
     try {
       await invoke(device.transport === 'serial' ? 'factory_reset_serial_device' : 'factory_reset_ble_device', {
         deviceId: device.id,
@@ -181,6 +189,7 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
       onBack();
     } catch (error) {
       console.error('Failed to factory reset device:', error);
+      setControlError(typeof error === 'string' ? error : 'Failed to factory reset the device');
     } finally {
       setIsResetting(false);
       setIsResetDialogOpen(false);
@@ -302,11 +311,79 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
     }
   };
 
+  const handleInstallFirmwareFromFile = async () => {
+    let filePath: string | string[] | null;
+
+    try {
+      filePath = await openDialog({
+        multiple: false,
+        filters: [{ name: 'Firmware image', extensions: ['bin'] }],
+      });
+    } catch (error) {
+      setFirmwareError(typeof error === 'string' ? error : 'Failed to open the file picker');
+      return;
+    }
+
+    if (!filePath) {
+      return;
+    }
+
+    const selectedPath = Array.isArray(filePath) ? filePath[0] : filePath;
+
+    if (!selectedPath) {
+      return;
+    }
+
+    setIsUpdatingFirmware(true);
+    setFirmwareProgress(null);
+    setFirmwareError(null);
+
+    try {
+      const command = device.transport === 'serial' ? 'update_firmware_serial' : 'update_firmware_ble';
+      await invoke(command, { deviceId: device.id, firmwarePath: selectedPath });
+      setUpdateAvailable(null);
+    } catch (error) {
+      setFirmwareProgress({
+        step: 'error',
+        progress: 0,
+        message: typeof error === 'string' ? error : 'Update failed',
+      });
+      setIsUpdatingFirmware(false);
+    }
+  };
+
+  const handleRollback = async () => {
+    setIsRollingBack(true);
+    setFirmwareError(null);
+
+    try {
+      const command = device.transport === 'serial' ? 'ota_rollback_serial' : 'ota_rollback_ble';
+      await invoke(command, { deviceId: device.id });
+      setFirmwareInfo(null);
+    } catch (error) {
+      setFirmwareError(typeof error === 'string' ? error : 'Rollback failed');
+    } finally {
+      setIsRollingBack(false);
+      setIsRollbackDialogOpen(false);
+    }
+  };
+
   const generalSection = (
     <div className={styles['device-page__stacked-grid']}>
       <article className={styles['device-page__panel']}>
         <h2>System Controls</h2>
         <div className={styles['device-page__control-list']}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setRenameValue(device.name);
+              setRenameError(null);
+              setIsRenameModalOpen(true);
+            }}
+          >
+            <IconPencil size={16} />
+            Rename device
+          </Button>
           <Button variant="secondary" onClick={handleRestart} isLoading={isRestarting}>
             <IconRefresh size={16} />
             Restart device
@@ -329,6 +406,14 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
             <IconTrash size={16} />
             Factory reset
           </Button>
+          {controlError && (
+            <div className={styles['device-page__update-error']}>
+              <p>{controlError}</p>
+              <Button variant="secondary" onClick={() => setControlError(null)}>
+                Dismiss
+              </Button>
+            </div>
+          )}
         </div>
       </article>
 
@@ -343,6 +428,28 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
       >
         <p>Are you sure you want to factory reset this device? This will erase all Wi-Fi settings and credentials. You will need to set up the device again.</p>
       </ConfirmDialog>
+
+      <Modal
+        isOpen={isRenameModalOpen}
+        title="Rename Device"
+        onClose={() => setIsRenameModalOpen(false)}
+        onConfirm={handleRename}
+        isLoading={isRenaming}
+        confirmText="Save name"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <Input
+            label="Device name"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            placeholder="Enter a new device name"
+            maxLength={MAX_DEVICE_NAME_LENGTH}
+          />
+          {renameError && (
+            <p style={{ color: 'var(--color-error)', fontSize: '0.875rem' }}>{renameError}</p>
+          )}
+        </div>
+      </Modal>
 
       <Modal
         isOpen={isPasswordModalOpen}
@@ -429,6 +536,51 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
               </Button>
             </div>
           </div>
+
+          <div className={styles['device-page__setting-row']} style={{ marginTop: '0.6rem' }}>
+            <div>
+              <h3>Install from file</h3>
+              <p>Flash a local firmware image without downloading</p>
+            </div>
+            <div>
+              <Button variant="secondary" onClick={handleInstallFirmwareFromFile} disabled={isUpdatingFirmware}>
+                <IconUpload size={16} />
+                Choose file
+              </Button>
+            </div>
+          </div>
+
+          <div className={styles['device-page__setting-row']} style={{ marginTop: '0.6rem' }}>
+            <div>
+              <h3>Roll back firmware</h3>
+              <p>Revert to the previously installed firmware partition</p>
+            </div>
+            <div>
+              <Button
+                variant="secondary"
+                onClick={() => setIsRollbackDialogOpen(true)}
+                disabled={isUpdatingFirmware}
+              >
+                <IconArrowBackUp size={16} />
+                Roll back
+              </Button>
+            </div>
+          </div>
+
+          <ConfirmDialog
+            isOpen={isRollbackDialogOpen}
+            title="Roll back firmware"
+            confirmText="Roll back"
+            isDangerous={true}
+            isLoading={isRollingBack}
+            onConfirm={handleRollback}
+            onCancel={() => setIsRollbackDialogOpen(false)}
+          >
+            <p>
+              The device will boot the previous firmware image and restart. Any settings changed
+              since the update may be lost.
+            </p>
+          </ConfirmDialog>
 
           {updateAvailable && !isUpdatingFirmware && (
             <div className={styles['device-page__update-banner']}>

@@ -1,7 +1,7 @@
-use futures_util::StreamExt;
 use btleplug::api::Peripheral as _;
-use uuid::Uuid;
+use futures_util::StreamExt;
 use tracing::{debug, warn};
+use uuid::Uuid;
 
 use super::state::ActiveBleConnection;
 use crate::constants::COMMAND_TIMEOUT;

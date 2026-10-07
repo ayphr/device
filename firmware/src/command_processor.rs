@@ -1,11 +1,13 @@
 use ayphr_protocol::{
-    COMMAND_APPLY_SETUP, COMMAND_AUTHENTICATE, COMMAND_CHANGE_PASSWORD, COMMAND_FACTORY_RESET,
-    COMMAND_GET_FIRMWARE_INFO, COMMAND_GET_STATUS, COMMAND_OTA_BEGIN, COMMAND_OTA_DATA,
-    COMMAND_OTA_END, COMMAND_OTA_ROLLBACK, COMMAND_RESTART, COMMAND_UPDATE_WIFI,
-    RESPONSE_AUTH_FAILED, RESPONSE_AUTH_OK, RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_ERROR,
-    RESPONSE_FACTORY_RESET_OK, RESPONSE_FIRMWARE_INFO, RESPONSE_OTA_BEGIN_OK,
-    RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RESTART_OK,
-    RESPONSE_SETUP_FAILED, RESPONSE_SETUP_OK, RESPONSE_STATUS, RESPONSE_UPDATE_WIFI_OK,
+    read_field, verify_password, COMMAND_APPLY_SETUP, COMMAND_AUTHENTICATE,
+    COMMAND_CHANGE_PASSWORD, COMMAND_FACTORY_RESET, COMMAND_GET_FIRMWARE_INFO, COMMAND_GET_STATUS,
+    COMMAND_OTA_BEGIN, COMMAND_OTA_DATA, COMMAND_OTA_END, COMMAND_OTA_ROLLBACK,
+    COMMAND_RENAME_DEVICE, COMMAND_RESTART, COMMAND_UPDATE_WIFI, MAX_DEVICE_NAME_LEN,
+    RESPONSE_AUTH_FAILED, RESPONSE_AUTH_LOCKED, RESPONSE_AUTH_OK, RESPONSE_CHANGE_PASSWORD_OK,
+    RESPONSE_ERROR, RESPONSE_FACTORY_RESET_OK, RESPONSE_FIRMWARE_INFO, RESPONSE_OTA_BEGIN_OK,
+    RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RENAME_OK,
+    RESPONSE_RESTART_OK, RESPONSE_SETUP_FAILED, RESPONSE_SETUP_OK, RESPONSE_STATUS,
+    RESPONSE_UPDATE_WIFI_OK,
 };
 use log::info;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -67,6 +69,7 @@ fn process_request(setup: &DeviceSetup, data: &[u8], bypass_auth: bool) -> Vec<u
         COMMAND_CHANGE_PASSWORD => handle_change_password(setup, data, &mut cursor, bypass_auth),
         COMMAND_UPDATE_WIFI => handle_update_wifi(setup, data, &mut cursor, bypass_auth),
         COMMAND_GET_FIRMWARE_INFO => handle_get_firmware_info(),
+        COMMAND_RENAME_DEVICE => handle_rename_device(setup, data, &mut cursor, bypass_auth),
         COMMAND_OTA_BEGIN => handle_ota_begin(setup, data, &mut cursor, bypass_auth),
         COMMAND_OTA_DATA => handle_ota_data(setup, data, &mut cursor, bypass_auth),
         COMMAND_OTA_END => handle_ota_end(setup, bypass_auth),
@@ -122,13 +125,33 @@ fn handle_authenticate(
         return vec![RESPONSE_AUTH_OK];
     }
 
-    let verified = !state.data.device_password.is_empty() && pass == state.data.device_password;
-    state.authenticated = verified;
-    vec![if verified {
-        RESPONSE_AUTH_OK
+    let now = now_ms();
+    if state.auth_limiter.is_locked(now) {
+        log::warn!(
+            "Authentication refused: locked for {} more ms",
+            state.auth_limiter.remaining_lockout_ms(now)
+        );
+        return vec![RESPONSE_AUTH_LOCKED];
+    }
+
+    let verified = !state.data.device_password_hash.is_empty()
+        && verify_password(&state.data.device_password_hash, &pass);
+
+    if verified {
+        state.authenticated = true;
+        state.auth_limiter.reset();
+        vec![RESPONSE_AUTH_OK]
     } else {
-        RESPONSE_AUTH_FAILED
-    }]
+        state.authenticated = false;
+        if state.auth_limiter.record_failure(now) {
+            log::warn!(
+                "Authentication failed {} times in a row: locking out for {} ms",
+                ayphr_protocol::DEFAULT_MAX_ATTEMPTS,
+                ayphr_protocol::DEFAULT_LOCKOUT_MS
+            );
+        }
+        vec![RESPONSE_AUTH_FAILED]
+    }
 }
 
 fn handle_apply_setup(
@@ -177,7 +200,7 @@ fn handle_apply_setup(
 
     new_data.wifi_ssid = wifi_ssid;
     new_data.wifi_password = wifi_pass;
-    new_data.device_password = dev_pass;
+    new_data.set_device_password(&dev_pass);
     new_data.auth_required = auth_required;
     new_data.wifi_required = !skip_wifi;
     if !dev_name.is_empty() {
@@ -193,6 +216,9 @@ fn handle_apply_setup(
         let mut state = setup.lock_state();
         state.data = new_data;
         state.authenticated = !bypass_auth;
+        state.auth_limiter.reset();
+        drop(state);
+        crate::ble::refresh_advertising(setup);
         if wifi_required {
             request_wifi_reconnect();
         }
@@ -261,10 +287,12 @@ fn handle_change_password(
 
     {
         let state = setup.lock_state();
+        let stored_hash = state.data.device_password_hash.as_str();
         if !bypass_auth
             && state.data.configured
             && state.data.auth_required
-            && current_pass != state.data.device_password
+            && !stored_hash.is_empty()
+            && !verify_password(stored_hash, &current_pass)
         {
             return vec![RESPONSE_AUTH_FAILED];
         }
@@ -275,15 +303,15 @@ fn handle_change_password(
         state.data.clone()
     };
 
-    new_data.device_password = new_pass.clone();
+    new_data.set_device_password(&new_pass);
     new_data.auth_required = true;
 
     let result = DeviceSetup::save_to_nvs(&setup.nvs, &new_data);
 
     if result.is_ok() {
         let mut state = setup.lock_state();
-        state.data.device_password = new_pass;
-        state.data.auth_required = true;
+        state.data = new_data;
+        state.auth_limiter.reset();
         vec![RESPONSE_CHANGE_PASSWORD_OK]
     } else {
         vec![RESPONSE_ERROR]
@@ -332,20 +360,50 @@ fn handle_update_wifi(
     }
 }
 
-fn read_field(data: &[u8], cursor: &mut usize) -> Option<String> {
-    if *cursor >= data.len() {
-        return None;
+fn handle_rename_device(
+    setup: &DeviceSetup,
+    data: &[u8],
+    cursor: &mut usize,
+    bypass_auth: bool,
+) -> Vec<u8> {
+    {
+        let state = setup.lock_state();
+        if !bypass_auth && state.data.configured && !state.authenticated {
+            return vec![RESPONSE_AUTH_FAILED];
+        }
     }
-    let len = data[*cursor] as usize;
-    *cursor += 1;
-    if *cursor + len > data.len() {
-        return None;
+
+    let name = match read_field(data, cursor) {
+        Some(name) => name.trim().to_string(),
+        None => return vec![RESPONSE_ERROR],
+    };
+
+    if name.is_empty() || name.len() > MAX_DEVICE_NAME_LEN {
+        log::warn!("Rejecting device name of length {}", name.len());
+        return vec![RESPONSE_ERROR];
     }
-    let val = std::str::from_utf8(&data[*cursor..*cursor + len])
-        .ok()?
-        .to_string();
-    *cursor += len;
-    Some(val)
+
+    let mut new_data = {
+        let state = setup.lock_state();
+        state.data.clone()
+    };
+    new_data.device_name = name;
+
+    let result = DeviceSetup::save_to_nvs(&setup.nvs, &new_data);
+
+    if result.is_ok() {
+        {
+            let mut state = setup.lock_state();
+            state.data = new_data;
+        }
+        // The state lock is released before refreshing advertising because
+        // that path reads the device name back from the shared state.
+        crate::ble::refresh_advertising(setup);
+        info!("Device renamed");
+        vec![RESPONSE_RENAME_OK]
+    } else {
+        vec![RESPONSE_ERROR]
+    }
 }
 
 fn handle_get_firmware_info() -> Vec<u8> {
@@ -470,4 +528,12 @@ static BOOT_TIME: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 
 pub fn init_boot_time() {
     BOOT_TIME.set(Instant::now()).ok();
+}
+
+/// Milliseconds since boot, used as the clock for auth rate limiting.
+fn now_ms() -> u64 {
+    BOOT_TIME
+        .get()
+        .map(|boot_time| boot_time.elapsed().as_millis() as u64)
+        .unwrap_or(0)
 }

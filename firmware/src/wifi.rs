@@ -45,11 +45,7 @@ pub fn reconnect(wifi: &mut BlockingWifi<EspWifi<'_>>, ssid: &str, password: &st
     apply_config_and_connect(wifi, ssid, password);
 }
 
-fn apply_config_and_connect(
-    wifi: &mut BlockingWifi<EspWifi<'_>>,
-    ssid: &str,
-    password: &str,
-) {
+fn apply_config_and_connect(wifi: &mut BlockingWifi<EspWifi<'_>>, ssid: &str, password: &str) {
     let ssid_heapless: heapless::String<32> = match ssid.try_into() {
         Ok(s) => s,
         Err(_) => {
