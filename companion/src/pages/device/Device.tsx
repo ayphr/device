@@ -13,7 +13,7 @@ import {
   IconWifiOff,
 } from '@tabler/icons-react';
 import { useState, useEffect, type ComponentType } from 'react';
-import { formatLastSeen, formatRssi, rssiLabel, signalStrengthLabel, type DeviceInfo } from '../../lib/devices';
+import { formatLastSeen, formatRssi, formatUptime, rssiLabel, signalStrengthLabel, type DeviceInfo } from '../../lib/devices';
 import { Button, ConfirmDialog, Modal, Input } from '../../components/common';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -555,7 +555,7 @@ export default function DevicePage({ device, onBack }: Readonly<DevicePageProps>
               </div>
               <div>
                 <dt>Uptime</dt>
-                <dd>{firmwareInfo.uptimeSecs}s</dd>
+                <dd>{formatUptime(firmwareInfo.uptimeSecs)}</dd>
               </div>
             </>
           )}

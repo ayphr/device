@@ -47,7 +47,7 @@ pub fn process_ble_request(setup: &DeviceSetup, data: &[u8]) -> Vec<u8> {
 }
 
 pub fn process_serial_request(setup: &DeviceSetup, data: &[u8]) -> Vec<u8> {
-    process_request(setup, data, false)
+    process_request(setup, data, true)
 }
 
 fn process_request(setup: &DeviceSetup, data: &[u8], bypass_auth: bool) -> Vec<u8> {

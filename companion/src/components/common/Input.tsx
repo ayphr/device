@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import styles from './Input.module.css';
 
@@ -16,10 +17,18 @@ export const Input = ({
   className = '',
   ...props
 }: InputProps) => {
+  const generatedId = useId();
+  const inputId = props.id ?? generatedId;
+
   return (
     <div className={`${styles['input-wrapper']} ${fullWidth ? styles['input-wrapper--full-width'] : ''}`.trim()}>
-      {label && <label className={styles['input-label']}>{label}</label>}
+      {label && (
+        <label htmlFor={inputId} className={styles['input-label']}>
+          {label}
+        </label>
+      )}
       <input
+        id={inputId}
         className={`${styles.input} ${error ? styles['input--error'] : ''} ${className}`.trim()}
         {...props}
       />
