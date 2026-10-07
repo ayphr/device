@@ -61,7 +61,13 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
+          # Must stay identical to warm-app-cache.yml (same shared-key and
+          # workspaces, no workflow-level env): tag-scoped caches are unreadable
+          # by other tags, so releases restore from the cache the warm workflow
+          # saves on main. The matrix target keeps the two macOS jobs from
+          # fighting over a single cache key.
           workspaces: companion/src-tauri -> target
+          shared-key: app-release-${{ matrix.target || 'host' }}
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
