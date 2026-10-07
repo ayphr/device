@@ -37,7 +37,7 @@ export default function Home({ devices, isSearchingForGeoDevices, onOpenDevice }
               subtitleIcon={getModelIcon(device.modelId)}
               elevated={true}
               signalStrength={device.signalStrength}
-              connected={device.authenticated}
+              connected={device.connected}
               setupComplete={device.setupComplete}
               onClick={() => onOpenDevice(device)}
             />

@@ -25,8 +25,8 @@ export default function AuthPage({ device, onBack, onAuthenticated }: Readonly<A
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const submitPassword = async () => {
-    if (password.trim().length < 8) {
-      setError('Enter at least 8 characters.');
+    if (password.trim().length === 0) {
+      setError('Enter the device password.');
       return;
     }
 

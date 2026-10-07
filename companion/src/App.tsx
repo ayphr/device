@@ -90,6 +90,8 @@ function App() {
   }, [settings]);
 
   useEffect(() => {
+    isMountedRef.current = true;
+
     return () => {
       isMountedRef.current = false;
     };

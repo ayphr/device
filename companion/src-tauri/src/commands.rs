@@ -275,7 +275,13 @@ pub async fn do_download_and_update_firmware(
     let url = download_url.to_string();
     let expected_sha256 = expected_sha256.to_string();
     let firmware_data = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        let response = ureq::get(&url)
+        let agent = ureq::Agent::new_with_config(
+            ureq::config::Config::builder()
+                .timeout_global(Some(std::time::Duration::from_secs(60)))
+                .build(),
+        );
+        let response = agent
+            .get(&url)
             .call()
             .map_err(|error| format!("Failed to download firmware: {}", error))?;
         
@@ -332,7 +338,13 @@ pub async fn do_ota_rollback(transport: &Transport) -> Result<(), String> {
 #[tauri::command]
 pub async fn fetch_firmware_release_metadata() -> Result<crate::types::FirmwareReleaseMetadata, String> {
     tokio::task::spawn_blocking(|| {
-        let response = ureq::get("https://github.com/ayphr/device/releases/latest/download/version.json")
+        let agent = ureq::Agent::new_with_config(
+            ureq::config::Config::builder()
+                .timeout_global(Some(std::time::Duration::from_secs(10)))
+                .build(),
+        );
+        let response = agent
+            .get("https://github.com/ayphr/device/releases/latest/download/version.json")
             .call()
             .map_err(|error| format!("Failed to fetch firmware release metadata: {error}"))?;
         let bytes = response
