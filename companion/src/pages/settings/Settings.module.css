@@ -124,6 +124,18 @@
   line-height: 1.35;
 }
 
+.settings-page__update-feedback {
+  margin-top: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.settings-page__update-feedback--error {
+  color: var(--status-error);
+}
+
 .settings-page__about-links {
   display: flex;
   align-items: center;

@@ -3,7 +3,7 @@ import { IconSettings, IconUserCircle } from '@tabler/icons-react';
 import { CurrentPage, type DeviceConnectionState } from './types';
 import Home from './pages/home/Home';
 import StatsPage from './pages/stats/Stats';
-import SettingsPage from './pages/settings/Settings';
+import SettingsPage, { type UpdateCheckFeedback } from './pages/settings/Settings';
 import ProfilePage from './pages/profile/Profile';
 import DevicePage from './pages/device/Device';
 import SetupPage from './pages/setup/Setup';
@@ -43,6 +43,7 @@ function App() {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isCheckingForUpdate, setIsCheckingForUpdate] = useState(false);
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
+  const [updateCheckFeedback, setUpdateCheckFeedback] = useState<UpdateCheckFeedback | null>(null);
   const devicesTabRef = useRef<HTMLButtonElement | null>(null);
   const statsTabRef = useRef<HTMLButtonElement | null>(null);
   const isMountedRef = useRef(true);
@@ -99,6 +100,7 @@ function App() {
 
     if (isMountedRef.current) {
       setIsCheckingForUpdate(true);
+      setUpdateCheckFeedback(null);
     }
 
     try {
@@ -106,7 +108,12 @@ function App() {
 
       await new Promise((resolve) => setTimeout(resolve, 750));
 
-      if (!update || !isMountedRef.current) {
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      if (!update) {
+        setUpdateCheckFeedback({ type: 'success', message: 'You’re up to date.' });
         return;
       }
 
@@ -134,6 +141,13 @@ function App() {
       }
     } catch (error) {
       console.error('Failed to check for app updates', error);
+
+      if (isMountedRef.current) {
+        setUpdateCheckFeedback({
+          type: 'error',
+          message: 'Couldn’t check for updates. Check your connection and try again.',
+        });
+      }
     } finally {
       if (isMountedRef.current) {
         setIsCheckingForUpdate(false);
@@ -463,6 +477,7 @@ function App() {
             onSettingsChange={setSettings}
             onCheckForUpdates={handleCheckForUpdates}
             isCheckingForUpdate={isCheckingForUpdate}
+            updateCheckFeedback={updateCheckFeedback}
           />
         )}
         {page === 'profile' && <ProfilePage />}

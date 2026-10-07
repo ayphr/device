@@ -17,14 +17,20 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 
 type SettingsSection = 'general' | 'updates' | 'feedback' | 'analytics' | 'accessibility' | 'about';
 
+export type UpdateCheckFeedback = {
+  type: 'success' | 'error';
+  message: string;
+};
+
 type SettingsPageProps = {
   settings: AppSettings;
   onSettingsChange: React.Dispatch<React.SetStateAction<AppSettings>>;
   onCheckForUpdates?: () => Promise<void> | (() => void);
   isCheckingForUpdate?: boolean;
+  updateCheckFeedback?: UpdateCheckFeedback | null;
 };
 
-export default function SettingsPage({ settings, onSettingsChange, onCheckForUpdates, isCheckingForUpdate }: Readonly<SettingsPageProps>) {
+export default function SettingsPage({ settings, onSettingsChange, onCheckForUpdates, isCheckingForUpdate, updateCheckFeedback }: Readonly<SettingsPageProps>) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
   const navRef = useRef<HTMLElement | null>(null);
 
@@ -243,6 +249,18 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
                 >
                   {isCheckingForUpdate ? 'Checking…' : 'Check for updates'}
                 </Button>
+                {updateCheckFeedback ? (
+                  <p
+                    className={`${styles['settings-page__update-feedback']} ${
+                      updateCheckFeedback.type === 'error'
+                        ? styles['settings-page__update-feedback--error']
+                        : ''
+                    }`.trim()}
+                    role={updateCheckFeedback.type === 'error' ? 'alert' : 'status'}
+                  >
+                    {updateCheckFeedback.message}
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>

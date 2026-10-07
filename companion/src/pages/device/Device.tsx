@@ -45,7 +45,7 @@ async function fetchFirmwareReleaseMetadata(): Promise<FirmwareReleaseMetadata> 
     return await invoke<FirmwareReleaseMetadata>('fetch_firmware_release_metadata');
   } catch {
     const metadataResponse = await fetch(
-      'https://github.com/ayphr/device/releases/latest/download/version.json',
+      'https://github.com/ayphr/device/releases/download/firmware-latest/version.json',
     );
     if (!metadataResponse.ok) throw new Error('Failed to fetch release metadata');
     return (await metadataResponse.json()) as FirmwareReleaseMetadata;

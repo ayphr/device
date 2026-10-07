@@ -129,6 +129,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/firmware-v')
         uses: softprops/action-gh-release@v3
         with:
+          prerelease: true
           files: |
             firmware/target/riscv32imc-esp-espidf/release/*.bin
             firmware/target/riscv32imc-esp-espidf/release/ayphr-firmware
@@ -136,3 +137,22 @@ jobs:
             version.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Publish the manifest to a stable tag so the app never depends on the
+      # shared `releases/latest` alias (which app and firmware releases fight over).
+      - name: Publish manifest to firmware-latest release
+        if: startsWith(github.ref, 'refs/tags/firmware-v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view firmware-latest --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload firmware-latest version.json \
+              --repo "${{ github.repository }}" --clobber
+          else
+            gh release create firmware-latest version.json \
+              --repo "${{ github.repository }}" \
+              --prerelease \
+              --title "Firmware latest" \
+              --notes "Stable firmware update manifest referenced by the Companion app. Do not delete."
+          fi

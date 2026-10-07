@@ -113,3 +113,52 @@ jobs:
           generateReleaseNotes: true
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+  # Publish the merged updater feed to a stable tag so installed apps never
+  # depend on the shared `releases/latest` alias (which app and firmware
+  # releases fight over). Runs after all matrix jobs so the feed is complete.
+  publish-updater-feed:
+    name: Publish updater feed
+    needs: build-and-upload
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download merged latest.json from the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --pattern latest.json --dir feed
+
+      - name: Validate feed covers every platform
+        run: |
+          python3 - <<'PY'
+          import json
+          import sys
+
+          with open('feed/latest.json') as handle:
+              platforms = set(json.load(handle).get('platforms', {}))
+
+          required = {'darwin-x86_64', 'darwin-aarch64', 'linux-x86_64', 'windows-x86_64'}
+          missing = required - platforms
+          if missing:
+              sys.exit(f'latest.json is missing platforms: {sorted(missing)}')
+          print(f'latest.json covers: {sorted(platforms)}')
+          PY
+
+      - name: Publish feed to app-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view app-latest --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload app-latest feed/latest.json \
+              --repo "${{ github.repository }}" --clobber
+          else
+            gh release create app-latest feed/latest.json \
+              --repo "${{ github.repository }}" \
+              --prerelease \
+              --title "App latest" \
+              --notes "Stable updater feed referenced by tauri.conf.json. Do not delete."
+          fi

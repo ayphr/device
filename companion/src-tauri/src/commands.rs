@@ -376,7 +376,7 @@ pub async fn fetch_firmware_release_metadata(
                 .build(),
         );
         let response = agent
-            .get("https://github.com/ayphr/device/releases/latest/download/version.json")
+            .get("https://github.com/ayphr/device/releases/download/firmware-latest/version.json")
             .call()
             .map_err(|error| format!("Failed to fetch firmware release metadata: {error}"))?;
         let bytes = response
