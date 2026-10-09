@@ -24,6 +24,8 @@ import { relaunch } from '@tauri-apps/plugin-process';
 import styles from './App.module.css';
 import logo from './assets/logo.svg';
 
+const AUTOMATIC_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
+
 function replaceDevicesForTransport(
   currentDevices: DeviceInfo[],
   incomingDevices: DeviceInfo[],
@@ -51,6 +53,7 @@ function App() {
   const devicesTabRef = useRef<HTMLButtonElement | null>(null);
   const statsTabRef = useRef<HTMLButtonElement | null>(null);
   const isMountedRef = useRef(true);
+  const presentedUpdateVersionRef = useRef<string | null>(null);
   const [tabIndicator, setTabIndicator] = useState({ left: 0, width: 0 });
 
   const isPrimaryPage = page === 'home' || page === 'stats';
@@ -117,12 +120,12 @@ function App() {
     }
   };
 
-  const checkForUpdates = async (options: { notify?: boolean } = {}) => {
+  const checkForUpdates = async (options: { notify?: boolean; manual?: boolean } = {}) => {
     if (import.meta.env.DEV) {
       return;
     }
 
-    const { notify = false } = options;
+    const { notify = false, manual = false } = options;
 
     if (isMountedRef.current) {
       setIsCheckingForUpdate(true);
@@ -143,6 +146,11 @@ function App() {
         return;
       }
 
+      if (!manual && presentedUpdateVersionRef.current === update.version) {
+        return;
+      }
+
+      presentedUpdateVersionRef.current = update.version;
       setAvailableUpdate(update);
 
       if (notify) {
@@ -169,20 +177,28 @@ function App() {
       return;
     }
 
-    const timerId = globalThis.setTimeout(() => {
+    const runCheck = () => {
+      if (!isMountedRef.current) {
+        return;
+      }
+
       void checkForUpdates({
         notify: settings.general.systemNotifications && settings.general.updateNotifications,
       });
-    }, 0);
+    };
+
+    const initialTimerId = globalThis.setTimeout(runCheck, 0);
+    const intervalId = globalThis.setInterval(runCheck, AUTOMATIC_UPDATE_INTERVAL_MS);
 
     return () => {
-      globalThis.clearTimeout(timerId);
+      globalThis.clearTimeout(initialTimerId);
+      globalThis.clearInterval(intervalId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.updates.automaticUpdates]);
 
   const handleCheckForUpdates = async () => {
-    await checkForUpdates();
+    await checkForUpdates({ manual: true });
   };
 
   useEffect(() => {

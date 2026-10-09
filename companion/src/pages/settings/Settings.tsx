@@ -219,7 +219,7 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
             <div className={styles['settings-page__row']}>
               <div className={styles['settings-page__copy']}>
                 <h4>Automatic updates</h4>
-                <p>Check for updates automatically when the app starts</p>
+                <p>Check for updates automatically while the app is running</p>
               </div>
               <Toggle
                 checked={settings.updates.automaticUpdates}
