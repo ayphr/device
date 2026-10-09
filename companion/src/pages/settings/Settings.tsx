@@ -196,6 +196,25 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
 
               <div className={styles['settings-page__row']}>
                 <div className={styles['settings-page__copy']}>
+                  <h4>Update notifications</h4>
+                  <p>Notify you when an update is available after an automatic check</p>
+                </div>
+                <Toggle
+                  checked={settings.general.updateNotifications}
+                  onChange={() =>
+                    onSettingsChange((current) => ({
+                      ...current,
+                      general: {
+                        ...current.general,
+                        updateNotifications: !current.general.updateNotifications,
+                      },
+                    }))
+                  }
+                />
+              </div>
+
+              <div className={styles['settings-page__row']}>
+                <div className={styles['settings-page__copy']}>
                   <h4>Recommendations</h4>
                   <p>Selectively recommend devices and experiences that are relevant to you</p>
                 </div>
@@ -220,7 +239,7 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
             <div className={styles['settings-page__row']}>
               <div className={styles['settings-page__copy']}>
                 <h4>Automatic updates</h4>
-                <p>Download and install updates automatically when available</p>
+                <p>Check for updates automatically when the app starts</p>
               </div>
               <Toggle
                 checked={settings.updates.automaticUpdates}

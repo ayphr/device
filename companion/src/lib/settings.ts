@@ -3,6 +3,7 @@ export type AppSettings = {
     launchOnLogin: boolean;
     stayOpenInBackground: boolean;
     systemNotifications: boolean;
+    updateNotifications: boolean;
     recommendations: boolean;
   };
   updates: {
@@ -20,6 +21,7 @@ export const defaultAppSettings: AppSettings = {
     launchOnLogin: true,
     stayOpenInBackground: false,
     systemNotifications: true,
+    updateNotifications: true,
     recommendations: true,
   },
   updates: {
@@ -49,6 +51,7 @@ export function normalizeAppSettings(value: unknown): AppSettings {
       launchOnLogin: readBoolean(general.launchOnLogin, defaultAppSettings.general.launchOnLogin),
       stayOpenInBackground: readBoolean(general.stayOpenInBackground, defaultAppSettings.general.stayOpenInBackground),
       systemNotifications: readBoolean(general.systemNotifications, defaultAppSettings.general.systemNotifications),
+      updateNotifications: readBoolean(general.updateNotifications, defaultAppSettings.general.updateNotifications),
       recommendations: readBoolean(general.recommendations, defaultAppSettings.general.recommendations),
     },
     updates: {

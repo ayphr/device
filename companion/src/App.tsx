@@ -16,6 +16,11 @@ import { disable, enable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { check, type Update } from '@tauri-apps/plugin-updater';
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from '@tauri-apps/plugin-notification';
 import { relaunch } from '@tauri-apps/plugin-process';
 import styles from './App.module.css';
 import logo from './assets/logo.svg';
@@ -91,12 +96,34 @@ function App() {
     };
   }, []);
 
-  const checkForUpdates = async (options: { autoInstall?: boolean } = {}) => {
+  const sendUpdateNotification = async (version: string) => {
+    try {
+      let permissionGranted = await isPermissionGranted();
+
+      if (!permissionGranted) {
+        const permission = await requestPermission();
+        permissionGranted = permission === 'granted';
+      }
+
+      if (!permissionGranted) {
+        return;
+      }
+
+      sendNotification({
+        title: 'Update available',
+        body: `Ayphr Companion ${version} is ready to install.`,
+      });
+    } catch (error) {
+      console.error('Failed to send update notification', error);
+    }
+  };
+
+  const checkForUpdates = async (options: { notify?: boolean } = {}) => {
     if (import.meta.env.DEV) {
       return;
     }
 
-    const { autoInstall = false } = options;
+    const { notify = false } = options;
 
     if (isMountedRef.current) {
       setIsCheckingForUpdate(true);
@@ -117,27 +144,10 @@ function App() {
         return;
       }
 
-      if (autoInstall) {
-        if (isMountedRef.current) {
-          setIsInstallingUpdate(true);
-        }
+      setAvailableUpdate(update);
 
-        try {
-          await update.downloadAndInstall();
-          await relaunch();
-        } catch (error) {
-          console.error('Failed to install app update', error);
-
-          if (isMountedRef.current) {
-            setAvailableUpdate(update);
-          }
-        } finally {
-          if (isMountedRef.current) {
-            setIsInstallingUpdate(false);
-          }
-        }
-      } else {
-        setAvailableUpdate(update);
+      if (notify) {
+        await sendUpdateNotification(update.version);
       }
     } catch (error) {
       console.error('Failed to check for app updates', error);
@@ -156,13 +166,20 @@ function App() {
   };
 
   useEffect(() => {
+    if (!settings.updates.automaticUpdates) {
+      return;
+    }
+
     const timerId = globalThis.setTimeout(() => {
-      void checkForUpdates({ autoInstall: settings.updates.automaticUpdates });
+      void checkForUpdates({
+        notify: settings.general.systemNotifications && settings.general.updateNotifications,
+      });
     }, 0);
 
     return () => {
       globalThis.clearTimeout(timerId);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.updates.automaticUpdates]);
 
   const handleCheckForUpdates = async () => {
