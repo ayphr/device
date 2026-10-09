@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { IconSettings, IconUserCircle } from '@tabler/icons-react';
+import { IconSettings } from '@tabler/icons-react';
 import { CurrentPage, type DeviceConnectionState } from './types';
 import Home from './pages/home/Home';
 import StatsPage from './pages/stats/Stats';
 import SettingsPage, { type UpdateCheckFeedback } from './pages/settings/Settings';
-import ProfilePage from './pages/profile/Profile';
 import DevicePage from './pages/device/Device';
 import SetupPage from './pages/setup/Setup';
 import AuthPage from './pages/auth/Auth';
@@ -470,12 +469,7 @@ function App() {
             onClick={() => setPage('settings')}
             aria-label="Settings"
           ></IconButton>
-          <IconButton
-            className={`${styles['app-icon-button']} ${page === 'profile' ? styles['app-icon-button--active'] : ''}`}
-            icon={<IconUserCircle size={18}></IconUserCircle>}
-            onClick={() => setPage('profile')}
-            aria-label="Account"
-          ></IconButton>
+
         </div>
       </header>
 
@@ -497,7 +491,7 @@ function App() {
             updateCheckFeedback={updateCheckFeedback}
           />
         )}
-        {page === 'profile' && <ProfilePage />}
+
         {page === 'setup' && selectedDevice ? (
           <SetupPage
             key={selectedDevice.id}

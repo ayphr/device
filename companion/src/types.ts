@@ -1,4 +1,4 @@
-export type CurrentPage = 'home' | 'stats' | 'settings' | 'profile' | 'device' | 'setup' | 'auth';
+export type CurrentPage = 'home' | 'stats' | 'settings' | 'device' | 'setup' | 'auth';
 
 /** Payload returned by the connect/authenticate/setup Tauri commands. */
 export interface DeviceConnectionState {

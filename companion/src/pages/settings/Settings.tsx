@@ -1,10 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  IconActivity,
   IconAccessible,
   IconArrowsExchange,
   IconHome2,
-  IconMessageCircle,
   IconInfoCircle,
   IconBrandGithub,
   IconWorld,
@@ -15,7 +13,7 @@ import styles from './Settings.module.css';
 import { APP_BUILD_NUMBER, APP_VERSION } from '../../lib/appInfo';
 import { openUrl } from '@tauri-apps/plugin-opener';
 
-type SettingsSection = 'general' | 'updates' | 'feedback' | 'analytics' | 'accessibility' | 'about';
+type SettingsSection = 'general' | 'updates' | 'accessibility' | 'about';
 
 export type UpdateCheckFeedback = {
   type: 'success' | 'error';
@@ -72,22 +70,7 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
             <IconArrowsExchange size={18}></IconArrowsExchange>
             Updates
           </button>
-          <button
-            className={`${styles['settings-page__item']} ${activeSection === 'feedback' ? styles['settings-page__item--active'] : ''}`.trim()}
-            type="button"
-            onClick={() => setActiveSection('feedback')}
-          >
-            <IconMessageCircle size={18}></IconMessageCircle>
-            Share Feedback
-          </button>
-          <button
-            className={`${styles['settings-page__item']} ${activeSection === 'analytics' ? styles['settings-page__item--active'] : ''}`.trim()}
-            type="button"
-            onClick={() => setActiveSection('analytics')}
-          >
-            <IconActivity size={18}></IconActivity>
-            Analytics
-          </button>
+
           <button
             className={`${styles['settings-page__item']} ${activeSection === 'accessibility' ? styles['settings-page__item--active'] : ''}`.trim()}
             type="button"
@@ -115,10 +98,7 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
                 return 'General Settings';
               case 'updates':
                 return 'Updates';
-              case 'feedback':
-                return 'Share Feedback';
-              case 'analytics':
-                return 'Analytics';
+
               case 'accessibility':
                 return 'Accessibility';
               case 'about':
@@ -284,12 +264,7 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
             </div>
           </div>
         )}
-        {activeSection === 'feedback' && (
-          <p>Share product feedback and diagnostics preferences.</p>
-        )}
-        {activeSection === 'analytics' && (
-          <p>Control usage analytics collection and reporting.</p>
-        )}
+
         {activeSection === 'accessibility' && (
           <div className={styles['settings-page__group']}>
             <div className={styles['settings-page__row']}>
