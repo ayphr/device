@@ -117,11 +117,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'App ${{ github.ref_name }}'
           generateReleaseNotes: true
+          uploadUpdaterJson: false
           args: ${{ matrix.args }}
 
-  # Publish the merged updater feed to a stable tag so installed apps never
-  # depend on the shared `releases/latest` alias (which app and firmware
-  # releases fight over). Runs after all matrix jobs so the feed is complete.
   publish-updater-feed:
     name: Publish updater feed
     needs: build-and-upload
@@ -129,25 +127,98 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download merged latest.json from the release
+      - name: Build merged updater feed from release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
-          gh release download "${{ github.ref_name }}" \
-            --repo "${{ github.repository }}" \
-            --pattern latest.json --dir feed
+          mkdir -p feed/sigs
 
-      - name: Validate feed covers every platform
-        run: |
+          gh release download "$RELEASE_TAG" \
+            --repo "$REPO" \
+            --pattern '*.sig' --dir feed/sigs
+
+          gh release view "$RELEASE_TAG" \
+            --repo "$REPO" \
+            --json assets > feed/assets.json
+
           python3 - <<'PY'
           import json
+          import os
+          import pathlib
           import sys
+          from datetime import datetime, timezone
 
-          with open('feed/latest.json') as handle:
-              platforms = set(json.load(handle).get('platforms', {}))
+          tag = os.environ['RELEASE_TAG']
+          sig_dir = pathlib.Path('feed/sigs')
 
-          required = {'darwin-x86_64', 'darwin-aarch64', 'linux-x86_64', 'windows-x86_64'}
-          missing = required - platforms
+          with open('feed/assets.json') as handle:
+              assets = json.load(handle)['assets']
+          api_url = {asset['name']: asset['apiUrl'] for asset in assets}
+
+          def classify(bundle):
+              if bundle.endswith('.app.tar.gz'):
+                  if '_aarch64.' in bundle:
+                      return 'darwin', 'aarch64', 'app'
+                  if '_x64.' in bundle or '_x86_64.' in bundle:
+                      return 'darwin', 'x86_64', 'app'
+              elif bundle.endswith('.AppImage'):
+                  return 'linux', 'x86_64', 'appimage'
+              elif bundle.endswith('.deb'):
+                  return 'linux', 'x86_64', 'deb'
+              elif bundle.endswith('.rpm'):
+                  return 'linux', 'x86_64', 'rpm'
+              elif bundle.endswith('.msi'):
+                  return 'windows', 'x86_64', 'msi'
+              elif bundle.endswith('.exe'):
+                  return 'windows', 'x86_64', 'nsis'
+              return None
+
+          platforms = {}
+          for sig_path in sorted(sig_dir.glob('*.sig')):
+              bundle = sig_path.name[: -len('.sig')]
+              target = classify(bundle)
+              if target is None or bundle not in api_url:
+                  continue
+              os_name, arch, kind = target
+              platforms[f'{os_name}-{arch}-{kind}'] = {
+                  'signature': sig_path.read_text(),
+                  'url': api_url[bundle],
+              }
+
+          # The bare `{os}-{arch}` keys are what the updater requests. Mirror
+          # tauri-action's bundle preferences: AppImage on Linux, MSI on
+          # Windows, and the macOS `.app` archive.
+          preferred = {
+              'darwin-aarch64': 'darwin-aarch64-app',
+              'darwin-x86_64': 'darwin-x86_64-app',
+              'linux-x86_64': 'linux-x86_64-appimage',
+              'windows-x86_64': 'windows-x86_64-msi',
+          }
+          for base, specific in preferred.items():
+              if specific in platforms:
+                  platforms[base] = platforms[specific]
+
+          version = tag[len('app-v') :] if tag.startswith('app-v') else tag
+          feed = {
+              'version': version,
+              'notes': '',
+              'pub_date': datetime.now(timezone.utc)
+              .isoformat()
+              .replace('+00:00', 'Z'),
+              'platforms': platforms,
+          }
+          with open('feed/latest.json', 'w') as handle:
+              json.dump(feed, handle, indent=2)
+
+          required = {
+              'darwin-x86_64',
+              'darwin-aarch64',
+              'linux-x86_64',
+              'windows-x86_64',
+          }
+          missing = required - set(platforms)
           if missing:
               sys.exit(f'latest.json is missing platforms: {sorted(missing)}')
           print(f'latest.json covers: {sorted(platforms)}')
