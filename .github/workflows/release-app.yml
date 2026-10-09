@@ -115,7 +115,7 @@ jobs:
         with:
           projectPath: companion
           tagName: ${{ github.ref_name }}
-          releaseName: 'App ${{ github.ref_name }}'
+          releaseName: 'App ${{ replace(github.ref_name, 'app-', '') }}'
           generateReleaseNotes: true
           uploadUpdaterJson: false
           args: ${{ matrix.args }}
