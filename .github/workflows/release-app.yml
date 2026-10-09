@@ -6,8 +6,42 @@ on:
       - 'app-v*'
 
 jobs:
+  create-release:
+    name: Create release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.create.outputs.release_id }}
+    steps:
+      - name: Create release if missing
+        id: create
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Reuse a release that already exists so a manually written title and
+          # description are never overwritten. Only create the release (with
+          # generated notes) when the tag has none yet.
+          release_id=$(gh release view "$RELEASE_TAG" \
+            --repo "$REPO" --json databaseId -q .databaseId 2>/dev/null || true)
+
+          if [ -z "$release_id" ]; then
+            version="${RELEASE_TAG#app-v}"
+            gh release create "$RELEASE_TAG" \
+              --repo "$REPO" \
+              --title "App v${version}" \
+              --generate-notes >/dev/null 2>&1 || true
+            release_id=$(gh release view "$RELEASE_TAG" \
+              --repo "$REPO" --json databaseId -q .databaseId)
+          fi
+
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+
   build-and-upload:
     name: Build ${{ matrix.platform }} (${{ matrix.target || 'default' }})
+    needs: create-release
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
@@ -114,9 +148,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: companion
-          tagName: ${{ github.ref_name }}
-          releaseName: 'App ${{ replace(github.ref_name, 'app-', '') }}'
-          generateReleaseNotes: true
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           uploadUpdaterJson: false
           args: ${{ matrix.args }}
 
