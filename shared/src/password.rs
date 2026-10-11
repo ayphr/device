@@ -48,7 +48,8 @@ fn verify_pbkdf2(rest: &str, password: &str) -> bool {
     if parts.next().is_some() {
         return false;
     }
-    let (Some(iterations), Some(salt_hex), Some(hash_hex)) = (iterations, salt_hex, hash_hex) else {
+    let (Some(iterations), Some(salt_hex), Some(hash_hex)) = (iterations, salt_hex, hash_hex)
+    else {
         return false;
     };
     let Some(iterations) = parse_u32(iterations) else {
@@ -122,7 +123,9 @@ fn parse_u32(value: &str) -> Option<u32> {
         if !byte.is_ascii_digit() {
             return None;
         }
-        result = result.checked_mul(10)?.checked_add(u32::from(byte - b'0'))?;
+        result = result
+            .checked_mul(10)?
+            .checked_add(u32::from(byte - b'0'))?;
     }
     Some(result)
 }
@@ -209,10 +212,19 @@ mod tests {
     fn hash_is_deterministic_and_self_describing() {
         let hash = hash_password("correct horse battery staple", &SALT, 1_000);
         assert!(hash.starts_with(PBKDF2_PREFIX));
-        assert_eq!(hash, hash_password("correct horse battery staple", &SALT, 1_000));
-        assert_ne!(hash, hash_password("correct horse battery stapl", &SALT, 1_000));
+        assert_eq!(
+            hash,
+            hash_password("correct horse battery staple", &SALT, 1_000)
+        );
+        assert_ne!(
+            hash,
+            hash_password("correct horse battery stapl", &SALT, 1_000)
+        );
         let other_salt = [0x22; PASSWORD_SALT_LEN];
-        assert_ne!(hash, hash_password("correct horse battery staple", &other_salt, 1_000));
+        assert_ne!(
+            hash,
+            hash_password("correct horse battery staple", &other_salt, 1_000)
+        );
     }
 
     #[test]
@@ -234,8 +246,14 @@ mod tests {
     fn verify_rejects_malformed_stored_values() {
         assert!(!verify_password("", "anything"));
         assert!(!verify_password("not-a-hash", "anything"));
-        assert!(!verify_password(&"z".repeat(LEGACY_HASH_HEX_LEN), "anything"));
-        assert!(!verify_password(&"AB".repeat(LEGACY_HASH_HEX_LEN / 2), "anything"));
+        assert!(!verify_password(
+            &"z".repeat(LEGACY_HASH_HEX_LEN),
+            "anything"
+        ));
+        assert!(!verify_password(
+            &"AB".repeat(LEGACY_HASH_HEX_LEN / 2),
+            "anything"
+        ));
         assert!(!verify_password("pbkdf2$sha256$0$00$00", "anything"));
         assert!(!verify_password("pbkdf2$sha256$abc$00$00", "anything"));
         assert!(!verify_password("pbkdf2$sha512$10$00$00", "anything"));

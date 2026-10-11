@@ -48,7 +48,9 @@ pub struct FirmwareHasher {
 
 impl FirmwareHasher {
     pub fn new() -> Self {
-        Self { inner: Sha256::new() }
+        Self {
+            inner: Sha256::new(),
+        }
     }
 
     pub fn update(&mut self, data: &[u8]) {
