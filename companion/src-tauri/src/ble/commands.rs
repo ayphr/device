@@ -258,6 +258,18 @@ pub async fn get_firmware_info_ble(
 }
 
 #[tauri::command]
+pub async fn get_live_data_ble(
+    device_id: String,
+    store: State<'_, BleDeviceStore>,
+) -> Result<Option<crate::types::LiveDataResult>, String> {
+    let connection = ensure_connected(device_id.clone(), &store)
+        .await
+        .map_err(|error| log_string_error("live data connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_get_live_data(&transport).await
+}
+
+#[tauri::command]
 pub async fn update_firmware_ble(
     device_id: String,
     firmware_path: String,

@@ -3,7 +3,7 @@ use tauri::{AppHandle, State};
 use crate::commands;
 use crate::protocol::log_string_error;
 use crate::transport::Transport;
-use crate::types::{BleConnectionState, FirmwareInfoResult};
+use crate::types::{BleConnectionState, FirmwareInfoResult, LiveDataResult};
 use ayphr_protocol::{COMMAND_AUTHENTICATE, RESPONSE_AUTH_FAILED, RESPONSE_AUTH_OK};
 
 use super::protocol::query_status;
@@ -225,6 +225,15 @@ pub async fn get_firmware_info_serial(
 ) -> Result<FirmwareInfoResult, String> {
     let transport = Transport::Serial(device_id);
     commands::do_get_firmware_info(&transport).await
+}
+
+#[tauri::command]
+pub async fn get_live_data_serial(
+    device_id: String,
+    _store: State<'_, SerialDeviceStore>,
+) -> Result<Option<LiveDataResult>, String> {
+    let transport = Transport::Serial(device_id);
+    commands::do_get_live_data(&transport).await
 }
 
 #[tauri::command]

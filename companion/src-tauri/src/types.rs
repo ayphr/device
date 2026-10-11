@@ -37,6 +37,16 @@ pub struct FirmwareInfoResult {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LiveDataResult {
+    pub packet_type: u8,
+    pub temperature: f32,
+    pub humidity: f32,
+    pub air_pressure: u16,
+    pub serial: u32,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FirmwareUpdateProgress {
     pub step: String,
     pub progress: f32,

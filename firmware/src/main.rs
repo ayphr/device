@@ -1,11 +1,14 @@
 mod ble;
 mod command_processor;
 mod config;
+mod identity;
+mod live_data;
 mod ota;
 mod serial;
 mod wifi;
 
 use crate::config::DeviceSetup;
+use ayphr_protocol::{SensorPacket, PACKET_TYPE_SENSOR};
 use bme280_multibus::Bme280;
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::gpio::AnyIOPin;
@@ -104,6 +107,9 @@ fn main() -> anyhow::Result<()> {
 
     ota::mark_valid();
 
+    let serial = identity::serial();
+    info!("Derived device serial from MAC: {}", serial);
+
     loop {
         if command_processor::take_wifi_reconnect_request() {
             let (ssid, password) = setup.load_wifi_credentials();
@@ -119,6 +125,13 @@ fn main() -> anyhow::Result<()> {
                         measurements.humidity,
                         measurements.pressure / 100.0
                     );
+                    live_data::update(SensorPacket {
+                        packet_type: PACKET_TYPE_SENSOR,
+                        temperature: measurements.temperature,
+                        humidity: measurements.humidity,
+                        air_pressure: (measurements.pressure / 100.0).round() as u16,
+                        serial,
+                    });
                 }
                 Err(_) => {
                     warn!("Failed to read BME280 sensor sample");

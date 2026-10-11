@@ -5,6 +5,7 @@ import {
   IconHome2,
   IconInfoCircle,
   IconBrandGithub,
+  IconTerminal2,
   IconWorld,
 } from '@tabler/icons-react';
 import { Toggle, Button, IconButton } from '../../components/common';
@@ -13,7 +14,7 @@ import styles from './Settings.module.css';
 import { APP_BUILD_NUMBER, APP_VERSION } from '../../lib/appInfo';
 import { openUrl } from '@tauri-apps/plugin-opener';
 
-type SettingsSection = 'general' | 'updates' | 'accessibility' | 'about';
+type SettingsSection = 'general' | 'updates' | 'accessibility' | 'developer' | 'about';
 
 export type UpdateCheckFeedback = {
   type: 'success' | 'error';
@@ -80,6 +81,14 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
             Accessibility
           </button>
           <button
+            className={`${styles['settings-page__item']} ${activeSection === 'developer' ? styles['settings-page__item--active'] : ''}`.trim()}
+            type="button"
+            onClick={() => setActiveSection('developer')}
+          >
+            <IconTerminal2 size={18}></IconTerminal2>
+            Developer
+          </button>
+          <button
             className={`${styles['settings-page__item']} ${activeSection === 'about' ? styles['settings-page__item--active'] : ''}`.trim()}
             type="button"
             onClick={() => setActiveSection('about')}
@@ -101,6 +110,8 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
 
               case 'accessibility':
                 return 'Accessibility';
+              case 'developer':
+                return 'Developer';
               case 'about':
                 return 'About';
               default:
@@ -280,6 +291,31 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
                     accessibility: {
                       ...current.accessibility,
                       logoAnimation: !current.accessibility.logoAnimation,
+                    },
+                  }))
+                }
+              />
+            </div>
+          </div>
+        )}
+        {activeSection === 'developer' && (
+          <div className={styles['settings-page__group']}>
+            <div className={styles['settings-page__row']}>
+              <div className={styles['settings-page__copy']}>
+                <h4>Developer mode</h4>
+                <p>
+                  Enable advanced tools and options intended for development and debugging. These
+                  features can leave your device in an unusable state.
+                </p>
+              </div>
+              <Toggle
+                checked={settings.developer.enabled}
+                onChange={() =>
+                  onSettingsChange((current) => ({
+                    ...current,
+                    developer: {
+                      ...current.developer,
+                      enabled: !current.developer.enabled,
                     },
                   }))
                 }

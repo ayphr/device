@@ -11,7 +11,9 @@ use tauri::{AppHandle, Emitter};
 
 use crate::protocol::{format_bytes, log_string_error};
 use crate::transport::Transport;
-use crate::types::{BleConnectionState, FirmwareInfoResult, FirmwareUpdateProgress, ParsedStatus};
+use crate::types::{
+    BleConnectionState, FirmwareInfoResult, FirmwareUpdateProgress, LiveDataResult, ParsedStatus,
+};
 
 pub fn build_connection_state(status: &ParsedStatus) -> BleConnectionState {
     BleConnectionState {
@@ -194,6 +196,21 @@ pub async fn do_get_firmware_info(transport: &Transport) -> Result<FirmwareInfoR
         hardware_rev: info.hardware_rev,
         uptime_secs: info.uptime_secs,
     })
+}
+
+pub async fn do_get_live_data(transport: &Transport) -> Result<Option<LiveDataResult>, String> {
+    let packet = transport
+        .query_live_data()
+        .await
+        .map_err(|e| log_string_error("live data query failed", e, "shared"))?;
+
+    Ok(packet.map(|packet| LiveDataResult {
+        packet_type: packet.packet_type,
+        temperature: packet.temperature,
+        humidity: packet.humidity,
+        air_pressure: packet.air_pressure,
+        serial: packet.serial,
+    }))
 }
 
 pub fn decode_signature_hex(value: &str) -> Result<[u8; FIRMWARE_SIGNATURE_LEN], String> {

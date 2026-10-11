@@ -1,14 +1,18 @@
 import {
   IconArrowLeft,
+  IconActivity,
   IconAntennaBars3,
   IconCloudDownload,
   IconDeviceDesktop,
+  IconDroplet,
+  IconGauge,
   IconInfoCircle,
   IconLock,
   IconPencil,
   IconRefresh,
   IconArrowBackUp,
   IconSettings,
+  IconTemperature,
   IconTrash,
   IconUpload,
   IconWifi,
@@ -21,24 +25,27 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { compareVersions, normalizeFirmwareVersion } from '../../lib/version';
-import type { FirmwareInfoResult, FirmwareReleaseMetadata, FirmwareUpdateProgress } from '../../types';
+import type { FirmwareInfoResult, FirmwareReleaseMetadata, FirmwareUpdateProgress, LiveDataResult } from '../../types';
 import styles from './Device.module.css';
 
 interface DevicePageProps {
   readonly device: DeviceInfo;
   readonly onBack: () => void;
   readonly onDeviceUpdated?: (device: DeviceInfo) => void;
+  readonly developerMode?: boolean;
 }
 
-type DeviceSection = 'general' | 'updates' | 'info';
+type DeviceSection = 'general' | 'updates' | 'live' | 'info';
 
 const sections: Array<{ id: DeviceSection; label: string; icon: ComponentType<{ size?: number }> }> = [
   { id: 'general', label: 'General', icon: IconSettings },
   { id: 'updates', label: 'Updates', icon: IconCloudDownload },
+  { id: 'live', label: 'Live Data', icon: IconActivity },
   { id: 'info', label: 'Info', icon: IconInfoCircle },
 ];
 
 const MAX_DEVICE_NAME_LENGTH = 64;
+const LIVE_DATA_POLL_INTERVAL_MS = 2000;
 
 async function fetchFirmwareReleaseMetadata(): Promise<FirmwareReleaseMetadata> {
   try {
@@ -52,7 +59,7 @@ async function fetchFirmwareReleaseMetadata(): Promise<FirmwareReleaseMetadata> 
   }
 }
 
-export default function DevicePage({ device, onBack, onDeviceUpdated }: Readonly<DevicePageProps>) {
+export default function DevicePage({ device, onBack, onDeviceUpdated, developerMode = false }: Readonly<DevicePageProps>) {
   const [activeSection, setActiveSection] = useState<DeviceSection>('general');
   const [isRestarting, setIsRestarting] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
@@ -85,6 +92,9 @@ export default function DevicePage({ device, onBack, onDeviceUpdated }: Readonly
 
   const [isRollbackDialogOpen, setIsRollbackDialogOpen] = useState(false);
   const [isRollingBack, setIsRollingBack] = useState(false);
+
+  const [liveData, setLiveData] = useState<LiveDataResult | null>(null);
+  const [liveDataError, setLiveDataError] = useState<string | null>(null);
 
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label ?? 'General';
 
@@ -133,6 +143,35 @@ export default function DevicePage({ device, onBack, onDeviceUpdated }: Readonly
       unlistenProgress?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (activeSection !== 'live') return;
+
+    let cancelled = false;
+    const command = device.transport === 'serial' ? 'get_live_data_serial' : 'get_live_data_ble';
+
+    const poll = async () => {
+      try {
+        const result = await invoke<LiveDataResult | null>(command, { deviceId: device.id });
+        if (!cancelled) {
+          setLiveData(result);
+          setLiveDataError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLiveDataError(typeof error === 'string' ? error : 'Failed to read live data');
+        }
+      }
+    };
+
+    void poll();
+    const timer = setInterval(() => void poll(), LIVE_DATA_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [activeSection, device.id, device.transport]);
 
   const handleRestart = async () => {
     setIsRestarting(true);
@@ -539,18 +578,20 @@ export default function DevicePage({ device, onBack, onDeviceUpdated }: Readonly
             </div>
           </div>
 
-          <div className={styles['device-page__setting-row']} style={{ marginTop: '0.6rem' }}>
-            <div>
-              <h3>Install from file</h3>
-              <p>Flash a local firmware image without downloading</p>
+          {developerMode && (
+            <div className={styles['device-page__setting-row']} style={{ marginTop: '0.6rem' }}>
+              <div>
+                <h3>Install from file</h3>
+                <p>Flash a local firmware image without downloading</p>
+              </div>
+              <div>
+                <Button variant="secondary" onClick={handleInstallFirmwareFromFile} disabled={isUpdatingFirmware}>
+                  <IconUpload size={16} />
+                  Choose file
+                </Button>
+              </div>
             </div>
-            <div>
-              <Button variant="secondary" onClick={handleInstallFirmwareFromFile} disabled={isUpdatingFirmware}>
-                <IconUpload size={16} />
-                Choose file
-              </Button>
-            </div>
-          </div>
+          )}
 
           <div className={styles['device-page__setting-row']} style={{ marginTop: '0.6rem' }}>
             <div>
@@ -636,6 +677,46 @@ export default function DevicePage({ device, onBack, onDeviceUpdated }: Readonly
             </div>
           )}
         </div>
+      </article>
+    </div>
+  );
+
+  const liveDataSection = (
+    <div className={styles['device-page__stacked-grid']}>
+      <article className={styles['device-page__panel']}>
+        <h2>Live sensor data</h2>
+        {liveDataError ? (
+          <p>{liveDataError}</p>
+        ) : liveData ? (
+          <div className={styles['device-page__metrics']}>
+            <article className={styles['device-page__metric-card']}>
+              <span className={styles['device-page__metric-label']}>
+                <IconTemperature size={14} />
+                Temperature
+              </span>
+              <strong>{liveData.temperature.toFixed(1)}°C</strong>
+            </article>
+
+            <article className={styles['device-page__metric-card']}>
+              <span className={styles['device-page__metric-label']}>
+                <IconDroplet size={14} />
+                Humidity
+              </span>
+              <strong>{liveData.humidity.toFixed(1)}%</strong>
+            </article>
+
+            <article className={styles['device-page__metric-card']}>
+              <span className={styles['device-page__metric-label']}>
+                <IconGauge size={14} />
+                Pressure
+              </span>
+              <strong>{liveData.airPressure} hPa</strong>
+            </article>
+          </div>
+        ) : (
+          <p>No sensor data is available for this device yet.</p>
+        )}
+        <p>Readings refresh automatically while this view is open.</p>
       </article>
     </div>
   );
@@ -765,6 +846,7 @@ export default function DevicePage({ device, onBack, onDeviceUpdated }: Readonly
 
           {activeSection === 'general' && generalSection}
           {activeSection === 'updates' && updatesSection}
+          {activeSection === 'live' && liveDataSection}
           {activeSection === 'info' && infoSection}
         </div>
       </div>

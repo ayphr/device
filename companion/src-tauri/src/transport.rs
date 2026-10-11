@@ -1,8 +1,12 @@
 use crate::ble::state::ActiveBleConnection;
 use crate::constants::BLE_OTA_WINDOW;
-use crate::protocol::{parse_firmware_info_response, parse_status_response};
+use crate::protocol::{
+    parse_firmware_info_response, parse_live_data_response, parse_status_response,
+};
 use crate::types::{ParsedFirmwareInfo, ParsedStatus};
-use ayphr_protocol::{COMMAND_GET_FIRMWARE_INFO, COMMAND_GET_STATUS};
+use ayphr_protocol::{
+    SensorPacket, COMMAND_GET_FIRMWARE_INFO, COMMAND_GET_LIVE_DATA, COMMAND_GET_STATUS,
+};
 
 pub enum Transport {
     Ble(ActiveBleConnection),
@@ -50,5 +54,10 @@ impl Transport {
     pub async fn query_firmware_info(&self) -> Result<ParsedFirmwareInfo, String> {
         let response = self.send_command(vec![COMMAND_GET_FIRMWARE_INFO]).await?;
         parse_firmware_info_response(&response)
+    }
+
+    pub async fn query_live_data(&self) -> Result<Option<SensorPacket>, String> {
+        let response = self.send_command(vec![COMMAND_GET_LIVE_DATA]).await?;
+        parse_live_data_response(&response)
     }
 }

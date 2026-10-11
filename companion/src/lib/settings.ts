@@ -12,6 +12,9 @@ export type AppSettings = {
   accessibility: {
     logoAnimation: boolean;
   };
+  developer: {
+    enabled: boolean;
+  };
 };
 
 const SETTINGS_STORAGE_KEY = 'ayphr-companion-settings-v1';
@@ -30,6 +33,9 @@ export const defaultAppSettings: AppSettings = {
   accessibility: {
     logoAnimation: true,
   },
+  developer: {
+    enabled: false,
+  },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -45,6 +51,7 @@ export function normalizeAppSettings(value: unknown): AppSettings {
   const general = isRecord(settings.general) ? settings.general : {};
   const updates = isRecord(settings.updates) ? settings.updates : {};
   const accessibility = isRecord(settings.accessibility) ? settings.accessibility : {};
+  const developer = isRecord(settings.developer) ? settings.developer : {};
 
   return {
     general: {
@@ -59,6 +66,9 @@ export function normalizeAppSettings(value: unknown): AppSettings {
     },
     accessibility: {
       logoAnimation: readBoolean(accessibility.logoAnimation, defaultAppSettings.accessibility.logoAnimation),
+    },
+    developer: {
+      enabled: readBoolean(developer.enabled, defaultAppSettings.developer.enabled),
     },
   };
 }

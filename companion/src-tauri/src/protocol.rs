@@ -1,4 +1,6 @@
-use ayphr_protocol::{RESPONSE_FIRMWARE_INFO, RESPONSE_STATUS};
+use ayphr_protocol::{
+    unpack, SensorPacket, RESPONSE_FIRMWARE_INFO, RESPONSE_LIVE_DATA, RESPONSE_STATUS,
+};
 
 use crate::types::{ParsedFirmwareInfo, ParsedStatus};
 
@@ -67,6 +69,35 @@ pub fn parse_firmware_info_response(payload: &[u8]) -> Result<ParsedFirmwareInfo
         hardware_rev,
         uptime_secs,
     })
+}
+
+pub fn parse_live_data_response(payload: &[u8]) -> Result<Option<SensorPacket>, String> {
+    if payload.len() < 2 || payload[0] != RESPONSE_LIVE_DATA {
+        tracing::warn!(
+            "[protocol] invalid live data payload={}",
+            format_bytes(payload)
+        );
+        return Err("Invalid live data response payload".to_string());
+    }
+
+    if payload[1] == 0 {
+        return Ok(None);
+    }
+
+    let decoded = unpack(&payload[2..]).ok_or_else(|| {
+        tracing::warn!(
+            "[protocol] malformed live data packet={}",
+            format_bytes(payload)
+        );
+        "Live data packet is malformed".to_string()
+    })?;
+
+    if !decoded.valid {
+        tracing::warn!("[protocol] live data packet failed parity check");
+        return Err("Live data packet failed its parity check".to_string());
+    }
+
+    Ok(Some(decoded.packet))
 }
 
 fn read_string_field(payload: &[u8], cursor: &mut usize) -> Result<String, String> {
@@ -159,5 +190,35 @@ mod tests {
         assert_eq!(parsed.version, "0.1.0");
         assert_eq!(parsed.hardware_rev, "rev1");
         assert_eq!(parsed.uptime_secs, 3600);
+    }
+
+    #[test]
+    fn test_parse_live_data_response_valid() {
+        let packet = SensorPacket {
+            packet_type: ayphr_protocol::PACKET_TYPE_SENSOR,
+            temperature: 21.5,
+            humidity: 48.0,
+            air_pressure: 1013,
+            serial: 42,
+        };
+        let encoded = ayphr_protocol::pack(&packet).unwrap();
+
+        let mut payload = vec![RESPONSE_LIVE_DATA, 1];
+        payload.extend_from_slice(&encoded);
+
+        let parsed = parse_live_data_response(&payload).unwrap().unwrap();
+        assert_eq!(parsed, packet);
+    }
+
+    #[test]
+    fn test_parse_live_data_response_unavailable() {
+        let payload = vec![RESPONSE_LIVE_DATA, 0];
+        assert_eq!(parse_live_data_response(&payload).unwrap(), None);
+    }
+
+    #[test]
+    fn test_parse_live_data_response_rejects_bad_payloads() {
+        assert!(parse_live_data_response(&[0x00, 1]).is_err());
+        assert!(parse_live_data_response(&[RESPONSE_LIVE_DATA, 1, 0x02]).is_err());
     }
 }

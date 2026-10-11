@@ -11,6 +11,7 @@ pub const COMMAND_OTA_DATA: u8 = 0x0A;
 pub const COMMAND_OTA_END: u8 = 0x0B;
 pub const COMMAND_OTA_ROLLBACK: u8 = 0x0C;
 pub const COMMAND_RENAME_DEVICE: u8 = 0x0D;
+pub const COMMAND_GET_LIVE_DATA: u8 = 0x0E;
 
 pub const RESPONSE_STATUS: u8 = 0x81;
 pub const RESPONSE_AUTH_OK: u8 = 0x82;
@@ -28,6 +29,7 @@ pub const RESPONSE_OTA_END_OK: u8 = 0x8D;
 pub const RESPONSE_OTA_ROLLBACK_OK: u8 = 0x8E;
 pub const RESPONSE_RENAME_OK: u8 = 0x8F;
 pub const RESPONSE_AUTH_LOCKED: u8 = 0x90;
+pub const RESPONSE_LIVE_DATA: u8 = 0x91;
 pub const RESPONSE_ERROR: u8 = 0xFF;
 
 pub const SERIAL_CHUNK_SIZE: usize = 2048;

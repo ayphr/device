@@ -1,13 +1,14 @@
 use ayphr_protocol::{
     read_field, verify_password, COMMAND_APPLY_SETUP, COMMAND_AUTHENTICATE,
-    COMMAND_CHANGE_PASSWORD, COMMAND_FACTORY_RESET, COMMAND_GET_FIRMWARE_INFO, COMMAND_GET_STATUS,
-    COMMAND_OTA_BEGIN, COMMAND_OTA_DATA, COMMAND_OTA_END, COMMAND_OTA_ROLLBACK,
-    COMMAND_RENAME_DEVICE, COMMAND_RESTART, COMMAND_UPDATE_WIFI, FIRMWARE_SIGNATURE_LEN,
-    MAX_DEVICE_NAME_LEN, RESPONSE_AUTH_FAILED, RESPONSE_AUTH_LOCKED, RESPONSE_AUTH_OK,
-    RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_ERROR, RESPONSE_FACTORY_RESET_OK, RESPONSE_FIRMWARE_INFO,
-    RESPONSE_OTA_BEGIN_OK, RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK,
-    RESPONSE_RENAME_OK, RESPONSE_RESTART_OK, RESPONSE_SETUP_FAILED, RESPONSE_SETUP_OK,
-    RESPONSE_STATUS, RESPONSE_UPDATE_WIFI_OK,
+    COMMAND_CHANGE_PASSWORD, COMMAND_FACTORY_RESET, COMMAND_GET_FIRMWARE_INFO,
+    COMMAND_GET_LIVE_DATA, COMMAND_GET_STATUS, COMMAND_OTA_BEGIN, COMMAND_OTA_DATA,
+    COMMAND_OTA_END, COMMAND_OTA_ROLLBACK, COMMAND_RENAME_DEVICE, COMMAND_RESTART,
+    COMMAND_UPDATE_WIFI, FIRMWARE_SIGNATURE_LEN, MAX_DEVICE_NAME_LEN, RESPONSE_AUTH_FAILED,
+    RESPONSE_AUTH_LOCKED, RESPONSE_AUTH_OK, RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_ERROR,
+    RESPONSE_FACTORY_RESET_OK, RESPONSE_FIRMWARE_INFO, RESPONSE_LIVE_DATA, RESPONSE_OTA_BEGIN_OK,
+    RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RENAME_OK,
+    RESPONSE_RESTART_OK, RESPONSE_SETUP_FAILED, RESPONSE_SETUP_OK, RESPONSE_STATUS,
+    RESPONSE_UPDATE_WIFI_OK,
 };
 use log::info;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -62,6 +63,7 @@ fn process_request(setup: &DeviceSetup, data: &[u8], bypass_auth: bool) -> Vec<u
         COMMAND_CHANGE_PASSWORD => handle_change_password(setup, data, &mut cursor, bypass_auth),
         COMMAND_UPDATE_WIFI => handle_update_wifi(setup, data, &mut cursor, bypass_auth),
         COMMAND_GET_FIRMWARE_INFO => handle_get_firmware_info(),
+        COMMAND_GET_LIVE_DATA => handle_get_live_data(),
         COMMAND_RENAME_DEVICE => handle_rename_device(setup, data, &mut cursor, bypass_auth),
         COMMAND_OTA_BEGIN => handle_ota_begin(setup, data, &mut cursor, bypass_auth),
         COMMAND_OTA_DATA => handle_ota_data(setup, data, &mut cursor, bypass_auth),
@@ -418,6 +420,21 @@ fn handle_get_firmware_info() -> Vec<u8> {
     resp.extend_from_slice(hw_rev_bytes);
     resp.extend_from_slice(&uptime_secs.to_le_bytes());
     resp
+}
+
+fn handle_get_live_data() -> Vec<u8> {
+    let encoded = crate::live_data::latest().and_then(|packet| ayphr_protocol::pack(&packet).ok());
+
+    match encoded {
+        Some(packet) => {
+            let mut response = Vec::with_capacity(2 + packet.len());
+            response.push(RESPONSE_LIVE_DATA);
+            response.push(1);
+            response.extend_from_slice(&packet);
+            response
+        }
+        None => vec![RESPONSE_LIVE_DATA, 0],
+    }
 }
 
 fn ota_precheck(setup: &DeviceSetup, bypass_auth: bool) -> Option<Vec<u8>> {

@@ -529,6 +529,7 @@ function App() {
             device={selectedDevice}
             onBack={goBackToDevices}
             onDeviceUpdated={handleDeviceUpdated}
+            developerMode={settings.developer.enabled}
           />
         ) : null}
       </main>

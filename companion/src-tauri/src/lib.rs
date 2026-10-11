@@ -9,16 +9,16 @@ mod types;
 use ble::{
     authenticate_ble_device, change_ble_device_password, connect_ble_device, disconnect_ble_device,
     download_and_update_firmware_ble, factory_reset_ble_device, get_ble_devices,
-    get_firmware_info_ble, ota_rollback_ble, rename_ble_device, restart_ble_device,
-    scan_ble_devices, submit_ble_setup, update_ble_device_wifi, update_firmware_ble,
-    BleDeviceStore,
+    get_firmware_info_ble, get_live_data_ble, ota_rollback_ble, rename_ble_device,
+    restart_ble_device, scan_ble_devices, submit_ble_setup, update_ble_device_wifi,
+    update_firmware_ble, BleDeviceStore,
 };
 use serial::{
     authenticate_serial_device, change_serial_device_password, connect_serial_device,
     download_and_update_firmware_serial, factory_reset_serial_device, get_firmware_info_serial,
-    get_serial_devices, ota_rollback_serial, rename_serial_device, restart_serial_device,
-    scan_serial_devices, submit_serial_setup, update_firmware_serial, update_serial_device_wifi,
-    SerialDeviceStore,
+    get_live_data_serial, get_serial_devices, ota_rollback_serial, rename_serial_device,
+    restart_serial_device, scan_serial_devices, submit_serial_setup, update_firmware_serial,
+    update_serial_device_wifi, SerialDeviceStore,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::menu::{MenuBuilder, MenuItem};
@@ -152,6 +152,7 @@ pub fn run() {
             rename_ble_device,
             update_ble_device_wifi,
             get_firmware_info_ble,
+            get_live_data_ble,
             update_firmware_ble,
             download_and_update_firmware_ble,
             ota_rollback_ble,
@@ -164,6 +165,7 @@ pub fn run() {
             rename_serial_device,
             update_serial_device_wifi,
             get_firmware_info_serial,
+            get_live_data_serial,
             update_firmware_serial,
             download_and_update_firmware_serial,
             ota_rollback_serial,

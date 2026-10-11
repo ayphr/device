@@ -15,6 +15,14 @@ export interface FirmwareInfoResult {
   uptimeSecs: number;
 }
 
+export interface LiveDataResult {
+  packetType: number;
+  temperature: number;
+  humidity: number;
+  airPressure: number;
+  serial: number;
+}
+
 export interface FirmwareUpdateProgress {
   step: string;
   progress: number;
