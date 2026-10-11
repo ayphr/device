@@ -236,10 +236,13 @@ pub async fn update_firmware_serial(
 ) -> Result<(), String> {
     let firmware_data = std::fs::read(&firmware_path)
         .map_err(|error| log_string_error("failed to read firmware file", error, "serial"))?;
+    let signature = commands::load_signature_for_firmware(&firmware_path)
+        .map_err(|error| log_string_error("failed to load firmware signature", error, "serial"))?;
     let transport = Transport::Serial(device_id);
     commands::do_update_firmware(
         &transport,
         firmware_data,
+        signature,
         &app,
         ayphr_protocol::SERIAL_CHUNK_SIZE,
         "serial",
@@ -252,6 +255,7 @@ pub async fn download_and_update_firmware_serial(
     device_id: String,
     download_url: String,
     expected_sha256: String,
+    expected_signature: String,
     app: AppHandle,
     _store: State<'_, SerialDeviceStore>,
 ) -> Result<(), String> {
@@ -260,6 +264,7 @@ pub async fn download_and_update_firmware_serial(
         &transport,
         &download_url,
         &expected_sha256,
+        &expected_signature,
         &app,
         ayphr_protocol::SERIAL_CHUNK_SIZE,
         "serial",

@@ -2,6 +2,7 @@
 name = "ayphr-firmware"
 version = "0.1.0"
 edition = "2021"
+authors = ["Ayphr"]
 
 [package.metadata.esp-idf-sys]
 esp_idf_tools_install_dir = "global"

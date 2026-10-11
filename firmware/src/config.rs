@@ -1,4 +1,7 @@
-use ayphr_protocol::{hash_password, AuthRateLimiter};
+use ayphr_protocol::{
+    hash_password, is_hashed_password, AuthRateLimiter, DEFAULT_PBKDF2_ITERATIONS,
+    PASSWORD_SALT_LEN,
+};
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
 use log::{info, warn};
 use std::sync::{Arc, Mutex};
@@ -20,8 +23,6 @@ pub struct DeviceSetupData {
     pub device_name: String,
     pub wifi_ssid: String,
     pub wifi_password: String,
-    /// Hex-encoded SHA-256 digest of the device password. Empty when no
-    /// password is set.
     pub device_password_hash: String,
     pub auth_required: bool,
     pub wifi_required: bool,
@@ -29,15 +30,24 @@ pub struct DeviceSetupData {
 }
 
 impl DeviceSetupData {
-    /// Replaces the stored device password with a hash of `password`. An
-    /// empty password clears the stored hash.
     pub fn set_device_password(&mut self, password: &str) {
         self.device_password_hash = if password.is_empty() {
             String::new()
         } else {
-            hash_password(password)
+            hash_password(password, &random_salt(), DEFAULT_PBKDF2_ITERATIONS)
         };
     }
+}
+
+fn random_salt() -> [u8; PASSWORD_SALT_LEN] {
+    let mut salt = [0u8; PASSWORD_SALT_LEN];
+    for chunk in salt.chunks_mut(4) {
+        let value = unsafe { esp_idf_svc::sys::esp_random() };
+        for (dst, src) in chunk.iter_mut().zip(value.to_le_bytes().iter()) {
+            *dst = *src;
+        }
+    }
+    salt
 }
 
 impl Default for DeviceSetupData {
@@ -163,13 +173,14 @@ impl DeviceSetup {
 
         let password_hashed = self.nvs.get_u8(NVS_KEY_PASS_HASHED).unwrap_or(Some(0)) == Some(1);
 
-        state.data.device_password_hash = if stored_password.is_empty() || password_hashed {
+        state.data.device_password_hash = if stored_password.is_empty()
+            || password_hashed
+            || is_hashed_password(&stored_password)
+        {
             stored_password
         } else {
-            // Older firmware stored the password in plaintext. Re-hash it so
-            // existing devices migrate transparently on first boot.
             warn!("Migrating plaintext device password to hashed storage");
-            let hash = hash_password(&stored_password);
+            let hash = hash_password(&stored_password, &random_salt(), DEFAULT_PBKDF2_ITERATIONS);
             if let Err(error) = self.nvs.set_str(NVS_KEY_DEV_PASS, &hash) {
                 warn!("Failed to persist hashed device password: {}", error);
             } else if let Err(error) = self.nvs.set_u8(NVS_KEY_PASS_HASHED, 1) {

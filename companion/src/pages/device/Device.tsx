@@ -292,7 +292,8 @@ export default function DevicePage({ device, onBack, onDeviceUpdated }: Readonly
       const metadata = await fetchFirmwareReleaseMetadata();
       const downloadUrl = metadata.binaryUrl;
       const expectedSha256 = metadata.sha256;
-      if (!downloadUrl || !expectedSha256) {
+      const expectedSignature = metadata.signature;
+      if (!downloadUrl || !expectedSha256 || !expectedSignature) {
         throw new Error('Release metadata is missing download information');
       }
 
@@ -302,6 +303,7 @@ export default function DevicePage({ device, onBack, onDeviceUpdated }: Readonly
         deviceId: device.id,
         downloadUrl,
         expectedSha256,
+        expectedSignature,
       });
 
       setUpdateAvailable(null);

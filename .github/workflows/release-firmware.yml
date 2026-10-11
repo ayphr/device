@@ -17,7 +17,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/firmware-v') || contains(github.event.pull_request.labels.*.name, 'firmware')
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout repository
@@ -103,6 +103,56 @@ jobs:
           echo "Generated OTA app image:"
           ls -la "${BINARY}.bin"
 
+      - name: Sign OTA app image
+        if: startsWith(github.ref, 'refs/tags/firmware-v')
+        shell: bash
+        env:
+          FIRMWARE_SIGNING_KEY: ${{ secrets.FIRMWARE_SIGNING_KEY }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const crypto = require('crypto');
+
+          const key = process.env.FIRMWARE_SIGNING_KEY;
+          if (!key) {
+            console.error('FIRMWARE_SIGNING_KEY secret is not configured');
+            process.exit(1);
+          }
+
+          const binPath =
+            'firmware/target/riscv32imc-esp-espidf/release/ayphr-firmware.bin';
+          const data = fs.readFileSync(binPath);
+          const digest = crypto.createHash('sha256').update(data).digest();
+
+          const privateKey = crypto.createPrivateKey({
+            key: Buffer.from(key, 'base64'),
+            format: 'der',
+            type: 'pkcs8',
+          });
+          const signature = crypto.sign(null, digest, privateKey);
+
+          // Re-verify against the public key embedded in the firmware before
+          // publishing. A mismatched or misconfigured key fails the release
+          // instead of shipping an image devices will reject.
+          const embeddedPublicKey =
+            'b88322aabdababfcf284f9e2a2c75748868cce2418d3e010e7c27c3a60e8671b';
+          const spkiPrefix = '302a300506032b6570032100';
+          const publicKey = crypto.createPublicKey({
+            key: Buffer.from(spkiPrefix + embeddedPublicKey, 'hex'),
+            format: 'der',
+            type: 'spki',
+          });
+          if (!crypto.verify(null, digest, publicKey, signature)) {
+            console.error('Firmware signature does not match the embedded public key');
+            process.exit(1);
+          }
+
+          const hex = signature.toString('hex');
+          fs.writeFileSync(`${binPath}.sig`, `${hex}\n`);
+          fs.writeFileSync('firmware-signature.txt', hex);
+          console.log(`Signed ${binPath} (${hex.length / 2}-byte Ed25519 signature)`);
+          NODE
+
       - name: Generate version.json
         if: startsWith(github.ref, 'refs/tags/firmware-v')
         shell: bash
@@ -113,44 +163,78 @@ jobs:
           BINARY_NAME="ayphr-firmware"
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/${BINARY_NAME}.bin"
           SHA256=$(sha256sum "firmware/target/riscv32imc-esp-espidf/release/${BINARY_NAME}.bin" | cut -d' ' -f1)
+          SIGNATURE=$(cat firmware-signature.txt)
 
           cat > version.json <<EOF
           {
             "version": "${VERSION}",
             "binaryUrl": "${DOWNLOAD_URL}",
-            "sha256": "${SHA256}"
+            "sha256": "${SHA256}",
+            "signature": "${SIGNATURE}"
           }
           EOF
 
           echo "Generated version.json:"
           cat version.json
 
-      - name: Upload Artifacts to Release
+      - name: Stage release files
         if: startsWith(github.ref, 'refs/tags/firmware-v')
+        shell: bash
+        run: |
+          BINARY_DIR="firmware/target/riscv32imc-esp-espidf/release"
+          mkdir -p dist
+          cp "${BINARY_DIR}/ayphr-firmware.bin" dist/
+          cp "${BINARY_DIR}/ayphr-firmware.bin.sig" dist/
+          cp "${BINARY_DIR}/ayphr-firmware" dist/
+          cp "${BINARY_DIR}/ayphr-firmware.d" dist/
+          cp version.json dist/
+          ls -la dist
+
+      - name: Upload build artifacts
+        if: startsWith(github.ref, 'refs/tags/firmware-v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-release
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    name: Publish Firmware Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/firmware-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-release
+
+      - name: Upload Artifacts to Release
         uses: softprops/action-gh-release@v3
         with:
           prerelease: true
           files: |
-            firmware/target/riscv32imc-esp-espidf/release/*.bin
-            firmware/target/riscv32imc-esp-espidf/release/ayphr-firmware
-            firmware/target/riscv32imc-esp-espidf/release/ayphr-firmware.d
+            ayphr-firmware.bin
+            ayphr-firmware.bin.sig
+            ayphr-firmware
+            ayphr-firmware.d
             version.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Publish the manifest to a stable tag so the app never depends on the
-      # shared `releases/latest` alias (which app and firmware releases fight over).
       - name: Publish manifest to firmware-latest release
-        if: startsWith(github.ref, 'refs/tags/firmware-v')
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view firmware-latest --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release upload firmware-latest version.json \
+            gh release upload firmware-latest version.json ayphr-firmware.bin.sig \
               --repo "${{ github.repository }}" --clobber
           else
-            gh release create firmware-latest version.json \
+            gh release create firmware-latest version.json ayphr-firmware.bin.sig \
               --repo "${{ github.repository }}" \
               --prerelease \
               --title "Firmware latest" \

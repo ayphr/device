@@ -9,6 +9,8 @@ import {
   IconBluetoothOff,
   IconUsb,
 } from '@tabler/icons-react';
+import { LiquidChromeLogo } from 'liquidity-react';
+import { DEVICE_SILHOUETTE_SVG, deviceVisualParams } from '../../lib/deviceVisual';
 import styles from './DeviceCard.module.css';
 
 export interface DeviceCardProps {
@@ -58,6 +60,8 @@ export const DeviceCard = ({
     return <IconAntennaBarsOff size={16} style={{ opacity: 0.3 }} />;
   })();
 
+  const visual = deviceVisualParams(name);
+
   const cardBody = (
     <>
       <div className={styles['device-card__meta']}>
@@ -89,11 +93,17 @@ export const DeviceCard = ({
         </div>
       </div>
 
-      <div className={styles['device-card__hero']} role="img" aria-label={`${name} image`}>
-        <img
+      <div className={styles['device-card__hero']}>
+        <LiquidChromeLogo
           className={styles['device-card__image']}
-          src={`https://picsum.photos/seed/${encodeURIComponent(name)}/420/640`}
-          alt={`${name}`}
+          svg={DEVICE_SILHOUETTE_SVG}
+          size={{ width: 210, height: 332 }}
+          textureSize={96}
+          colorShift={visual.colorShift}
+          speed={visual.speed}
+          logoScale={visual.logoScale}
+          logoOpacity={visual.logoOpacity}
+          ariaLabel={`${name} preview`}
         />
       </div>
     </>

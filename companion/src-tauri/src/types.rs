@@ -49,4 +49,5 @@ pub struct FirmwareReleaseMetadata {
     pub version: Option<String>,
     pub binary_url: Option<String>,
     pub sha256: Option<String>,
+    pub signature: Option<String>,
 }

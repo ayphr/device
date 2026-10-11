@@ -3,11 +3,16 @@ use esp_idf_svc::ota::{EspOta, EspOtaUpdate};
 use log::{info, warn};
 use std::sync::Mutex;
 
+use ayphr_protocol::{verify_firmware_digest_signature, FirmwareHasher, FIRMWARE_SIGNATURE_LEN};
+
 pub struct OtaSession {
     ota: Option<*mut EspOta>,
     update: Option<EspOtaUpdate<'static>>,
     bytes_written: usize,
     total_size: usize,
+    signature: [u8; FIRMWARE_SIGNATURE_LEN],
+    hasher: Option<FirmwareHasher>,
+    next_seq: u32,
 }
 
 unsafe impl Send for OtaSession {}
@@ -17,6 +22,9 @@ static OTA_STATE: Mutex<OtaSession> = Mutex::new(OtaSession {
     update: None,
     bytes_written: 0,
     total_size: 0,
+    signature: [0u8; FIRMWARE_SIGNATURE_LEN],
+    hasher: None,
+    next_seq: 0,
 });
 
 const MAX_OTA_PARTITION_SIZE: usize = 0x1E0000;
@@ -30,12 +38,17 @@ fn lock_ota_state() -> Result<std::sync::MutexGuard<'static, OtaSession>, &'stat
             guard.update = None;
             guard.bytes_written = 0;
             guard.total_size = 0;
+            guard.hasher = None;
+            guard.next_seq = 0;
             Ok(guard)
         }
     }
 }
 
-pub fn begin(total_size: usize) -> Result<(), &'static str> {
+pub fn begin(
+    total_size: usize,
+    signature: [u8; FIRMWARE_SIGNATURE_LEN],
+) -> Result<(), &'static str> {
     if total_size == 0 {
         return Err("OTA firmware size must be greater than zero");
     }
@@ -64,20 +77,39 @@ pub fn begin(total_size: usize) -> Result<(), &'static str> {
     state.update = Some(update);
     state.bytes_written = 0;
     state.total_size = total_size;
+    state.signature = signature;
+    state.hasher = Some(FirmwareHasher::new());
+    state.next_seq = 0;
     info!("OTA update started, total_size={}", total_size);
     Ok(())
 }
 
-pub fn write_data(data: &[u8]) -> Result<(), &'static str> {
+pub fn write_data(seq: u32, data: &[u8]) -> Result<(), &'static str> {
     let mut state = lock_ota_state()?;
+
+    if state.update.is_none() {
+        return Err("OTA not initialized; send BEGIN first");
+    }
 
     if data.is_empty() {
         return Err("OTA data chunk is empty");
     }
 
+    if seq != state.next_seq {
+        warn!(
+            "Rejecting OTA chunk with sequence {}; expected {}",
+            seq, state.next_seq
+        );
+        return Err("OTA data chunk out of order");
+    }
+
     let remaining = state.total_size.saturating_sub(state.bytes_written);
     if data.len() > remaining {
         return Err("OTA data exceeds declared firmware size");
+    }
+
+    if let Some(hasher) = state.hasher.as_mut() {
+        hasher.update(data);
     }
 
     let update = state
@@ -90,6 +122,7 @@ pub fn write_data(data: &[u8]) -> Result<(), &'static str> {
         .map_err(|_| "Failed to write OTA data to flash")?;
 
     state.bytes_written += data.len();
+    state.next_seq = state.next_seq.wrapping_add(1);
     info!(
         "OTA progress: {}/{} bytes ({:.1}%)",
         state.bytes_written,
@@ -106,9 +139,25 @@ pub fn write_data(data: &[u8]) -> Result<(), &'static str> {
 pub fn end() -> Result<(), &'static str> {
     let mut state = lock_ota_state()?;
 
+    if state.update.is_none() {
+        return Err("OTA not initialized; send BEGIN first");
+    }
+
     if state.bytes_written < state.total_size {
         state.update = None;
+        state.hasher = None;
         return Err("OTA incomplete: fewer bytes received than declared size");
+    }
+
+    let digest = state
+        .hasher
+        .take()
+        .ok_or("OTA session has no active hasher")?
+        .finalize();
+    if !verify_firmware_digest_signature(&digest, &state.signature) {
+        state.update = None;
+        warn!("OTA image signature verification failed; aborting update");
+        return Err("OTA image signature verification failed");
     }
 
     let update = state
@@ -121,7 +170,7 @@ pub fn end() -> Result<(), &'static str> {
         .map_err(|_| "OTA image validation failed")?;
 
     info!(
-        "OTA update complete ({} bytes written), rebooting...",
+        "OTA update complete ({} bytes written, signature verified), rebooting...",
         state.bytes_written
     );
     crate::command_processor::schedule_restart();

@@ -31,9 +31,12 @@ pub const RESPONSE_AUTH_LOCKED: u8 = 0x90;
 pub const RESPONSE_ERROR: u8 = 0xFF;
 
 pub const SERIAL_CHUNK_SIZE: usize = 2048;
-pub const BLE_CHUNK_SIZE: usize = 200;
+pub const BLE_CHUNK_SIZE: usize = 176;
 
-/// Maximum length accepted for a device name, in bytes of UTF-8 text.
+pub const BLE_FRAME_HEADER_LEN: usize = 2;
+pub const BLE_NOTIFY_CHUNK_SIZE: usize = 20;
+pub const MAX_BLE_FRAME_PAYLOAD: usize = 4096;
+
 pub const MAX_DEVICE_NAME_LEN: usize = 64;
 
 pub const FIRMWARE_SERVICE_UUID: &str = "01171718-ce62-6a9a-5541-b839b04a7bd1";

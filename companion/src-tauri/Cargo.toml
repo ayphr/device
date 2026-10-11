@@ -2,15 +2,10 @@
 name = "companion"
 version = "0.1.0"
 description = "Companion app to manage, control, provision, and flash Ayphr devices"
-authors = ["you"]
+authors = ["Ayphr"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "companion_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
@@ -30,7 +25,7 @@ serde_json = "1"
 btleplug = "0.13"
 serialport = "4.9"
 sha2 = "0.11"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 futures-util = "0.3"
 uuid = "1"
 tracing = "0.1"

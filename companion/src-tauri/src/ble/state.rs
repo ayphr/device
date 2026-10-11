@@ -3,19 +3,15 @@ use btleplug::platform::Peripheral;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
 
 use super::constants::BLE_DEVICES_UPDATED_EVENT;
-
-const AUTH_CACHE_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Clone, Default)]
 pub struct BleDeviceStore {
     pub devices: Arc<Mutex<Vec<BleDeviceSnapshot>>>,
     pub live_peripherals: Arc<Mutex<HashMap<String, Peripheral>>>,
     pub connections: Arc<Mutex<HashMap<String, ActiveBleConnection>>>,
-    pub authenticated_cache: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
 #[derive(Clone)]
@@ -55,14 +51,6 @@ pub fn get_ble_devices(store: State<'_, BleDeviceStore>) -> Vec<BleDeviceSnapsho
 }
 
 pub fn upsert_connection(store: &BleDeviceStore, device_id: &str, connection: ActiveBleConnection) {
-    if connection.authenticated {
-        let mut cache_guard = store.authenticated_cache.lock().unwrap();
-        cache_guard.insert(device_id.to_string(), Instant::now());
-    } else {
-        let mut cache_guard = store.authenticated_cache.lock().unwrap();
-        cache_guard.remove(device_id);
-    }
-
     let mut guard = store.connections.lock().unwrap();
     guard.insert(device_id.to_string(), connection);
 }
@@ -91,34 +79,20 @@ pub fn refresh_snapshots_with_connection_state(store: &BleDeviceStore) {
             .collect::<HashMap<_, _>>()
     };
 
-    let auth_cache = {
-        let mut guard = store.authenticated_cache.lock().unwrap();
-        guard.retain(|_, last_auth| last_at_elapsed(last_auth) < AUTH_CACHE_TIMEOUT);
-        guard.keys().cloned().collect::<Vec<_>>()
-    };
-
     let mut devices = store.devices.lock().unwrap();
     for device in &mut *devices {
-        let cached_auth = auth_cache.contains(&device.id);
-
         if let Some((authenticated, setup_complete, connected)) = connection_state.get(&device.id) {
             device.setup_complete = device.setup_complete || *setup_complete;
-            let effective_auth = *authenticated || cached_auth;
-            device.authenticated = effective_auth;
-            device.connected = *connected || effective_auth;
-            continue;
+            device.authenticated = *authenticated;
+            device.connected = *connected;
+        } else {
+            device.authenticated = false;
+            device.connected = false;
         }
-
-        device.authenticated = cached_auth;
-        device.connected = cached_auth;
     }
 }
 
-fn last_at_elapsed(at: &Instant) -> Duration {
-    at.elapsed()
-}
-
 pub fn emit_devices(app: &AppHandle, store: &BleDeviceStore) {
-    let snapshot = store.devices.lock().unwrap().clone();
-    let _ = app.emit(BLE_DEVICES_UPDATED_EVENT, snapshot);
+    let devices = store.devices.lock().unwrap();
+    let _ = app.emit(BLE_DEVICES_UPDATED_EVENT, &*devices);
 }

@@ -31,8 +31,6 @@ pub struct SerialDeviceSnapshot {
     pub service_uuids: Vec<String>,
 }
 
-/// Replaces the cached snapshot for `device_id` when the port is still
-/// listed, so status changes show up without waiting for the next scan tick.
 pub fn update_snapshot<F>(store: &SerialDeviceStore, device_id: &str, mutate: F)
 where
     F: FnOnce(&mut SerialDeviceSnapshot),
@@ -44,8 +42,8 @@ where
 }
 
 pub fn emit_devices(app: &AppHandle, store: &SerialDeviceStore) {
-    let snapshot = store.devices.lock().unwrap().clone();
-    let _ = app.emit(SERIAL_DEVICES_UPDATED_EVENT, snapshot);
+    let devices = store.devices.lock().unwrap();
+    let _ = app.emit(SERIAL_DEVICES_UPDATED_EVENT, &*devices);
 }
 
 pub fn get_serial_devices(store: &SerialDeviceStore) -> Vec<SerialDeviceSnapshot> {

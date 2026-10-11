@@ -2,12 +2,12 @@ use ayphr_protocol::{
     read_field, verify_password, COMMAND_APPLY_SETUP, COMMAND_AUTHENTICATE,
     COMMAND_CHANGE_PASSWORD, COMMAND_FACTORY_RESET, COMMAND_GET_FIRMWARE_INFO, COMMAND_GET_STATUS,
     COMMAND_OTA_BEGIN, COMMAND_OTA_DATA, COMMAND_OTA_END, COMMAND_OTA_ROLLBACK,
-    COMMAND_RENAME_DEVICE, COMMAND_RESTART, COMMAND_UPDATE_WIFI, MAX_DEVICE_NAME_LEN,
-    RESPONSE_AUTH_FAILED, RESPONSE_AUTH_LOCKED, RESPONSE_AUTH_OK, RESPONSE_CHANGE_PASSWORD_OK,
-    RESPONSE_ERROR, RESPONSE_FACTORY_RESET_OK, RESPONSE_FIRMWARE_INFO, RESPONSE_OTA_BEGIN_OK,
-    RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RENAME_OK,
-    RESPONSE_RESTART_OK, RESPONSE_SETUP_FAILED, RESPONSE_SETUP_OK, RESPONSE_STATUS,
-    RESPONSE_UPDATE_WIFI_OK,
+    COMMAND_RENAME_DEVICE, COMMAND_RESTART, COMMAND_UPDATE_WIFI, FIRMWARE_SIGNATURE_LEN,
+    MAX_DEVICE_NAME_LEN, RESPONSE_AUTH_FAILED, RESPONSE_AUTH_LOCKED, RESPONSE_AUTH_OK,
+    RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_ERROR, RESPONSE_FACTORY_RESET_OK, RESPONSE_FIRMWARE_INFO,
+    RESPONSE_OTA_BEGIN_OK, RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK,
+    RESPONSE_RENAME_OK, RESPONSE_RESTART_OK, RESPONSE_SETUP_FAILED, RESPONSE_SETUP_OK,
+    RESPONSE_STATUS, RESPONSE_UPDATE_WIFI_OK,
 };
 use log::info;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,9 +19,6 @@ const FIRMWARE_VERSION: &str = env!("CARGO_PKG_VERSION");
 static WIFI_RECONNECT_REQUESTED: AtomicBool = AtomicBool::new(false);
 static RESTART_SCHEDULED: AtomicBool = AtomicBool::new(false);
 
-/// Schedules a device restart after a short delay so the transport has time
-/// to deliver the pending response to the caller. Safe to call multiple
-/// times; only the first request arms the restart.
 pub fn schedule_restart() {
     if RESTART_SCHEDULED.swap(true, Ordering::SeqCst) {
         return;
@@ -32,14 +29,10 @@ pub fn schedule_restart() {
     });
 }
 
-/// Asks the WiFi management loop to reconnect with the credentials
-/// currently stored in NVS (e.g. after a runtime Wi-Fi update).
 pub fn request_wifi_reconnect() {
     WIFI_RECONNECT_REQUESTED.store(true, Ordering::SeqCst);
 }
 
-/// Consumes the reconnect request, returning whether one was pending.
-/// Called periodically by the main loop.
 pub fn take_wifi_reconnect_request() -> bool {
     WIFI_RECONNECT_REQUESTED.swap(false, Ordering::SeqCst)
 }
@@ -427,20 +420,29 @@ fn handle_get_firmware_info() -> Vec<u8> {
     resp
 }
 
+fn ota_precheck(setup: &DeviceSetup, bypass_auth: bool) -> Option<Vec<u8>> {
+    let state = setup.lock_state();
+    if !state.data.configured {
+        log::warn!("Rejecting OTA command: device is not provisioned");
+        return Some(vec![RESPONSE_ERROR]);
+    }
+    if !bypass_auth && !state.authenticated {
+        return Some(vec![RESPONSE_AUTH_FAILED]);
+    }
+    None
+}
+
 fn handle_ota_begin(
     setup: &DeviceSetup,
     data: &[u8],
     cursor: &mut usize,
     bypass_auth: bool,
 ) -> Vec<u8> {
-    {
-        let state = setup.lock_state();
-        if !bypass_auth && state.data.configured && !state.authenticated {
-            return vec![RESPONSE_AUTH_FAILED];
-        }
+    if let Some(rejection) = ota_precheck(setup, bypass_auth) {
+        return rejection;
     }
 
-    if *cursor + 4 > data.len() {
+    if *cursor + 4 + FIRMWARE_SIGNATURE_LEN > data.len() {
         return vec![RESPONSE_ERROR];
     }
     let total_size = u32::from_le_bytes([
@@ -451,7 +453,11 @@ fn handle_ota_begin(
     ]) as usize;
     *cursor += 4;
 
-    match crate::ota::begin(total_size) {
+    let mut signature = [0u8; FIRMWARE_SIGNATURE_LEN];
+    signature.copy_from_slice(&data[*cursor..*cursor + FIRMWARE_SIGNATURE_LEN]);
+    *cursor += FIRMWARE_SIGNATURE_LEN;
+
+    match crate::ota::begin(total_size, signature) {
         Ok(()) => vec![RESPONSE_OTA_BEGIN_OK],
         Err(error) => {
             log::error!("OTA begin failed: {}", error);
@@ -466,20 +472,23 @@ fn handle_ota_data(
     cursor: &mut usize,
     bypass_auth: bool,
 ) -> Vec<u8> {
-    {
-        let state = setup.lock_state();
-        if !bypass_auth && state.data.configured && !state.authenticated {
-            return vec![RESPONSE_AUTH_FAILED];
-        }
+    if let Some(rejection) = ota_precheck(setup, bypass_auth) {
+        return rejection;
     }
 
     if *cursor + 4 > data.len() {
         return vec![RESPONSE_ERROR];
     }
+    let seq = u32::from_le_bytes([
+        data[*cursor],
+        data[*cursor + 1],
+        data[*cursor + 2],
+        data[*cursor + 3],
+    ]);
     *cursor += 4;
     let payload = &data[*cursor..];
 
-    match crate::ota::write_data(payload) {
+    match crate::ota::write_data(seq, payload) {
         Ok(()) => vec![RESPONSE_OTA_DATA_OK],
         Err(error) => {
             log::error!("OTA data write failed: {}", error);
@@ -489,11 +498,8 @@ fn handle_ota_data(
 }
 
 fn handle_ota_end(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
-    {
-        let state = setup.lock_state();
-        if !bypass_auth && state.data.configured && !state.authenticated {
-            return vec![RESPONSE_AUTH_FAILED];
-        }
+    if let Some(rejection) = ota_precheck(setup, bypass_auth) {
+        return rejection;
     }
 
     match crate::ota::end() {
@@ -506,11 +512,8 @@ fn handle_ota_end(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
 }
 
 fn handle_ota_rollback(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
-    {
-        let state = setup.lock_state();
-        if !bypass_auth && state.data.configured && !state.authenticated {
-            return vec![RESPONSE_AUTH_FAILED];
-        }
+    if let Some(rejection) = ota_precheck(setup, bypass_auth) {
+        return rejection;
     }
 
     match crate::ota::rollback() {
@@ -530,7 +533,6 @@ pub fn init_boot_time() {
     BOOT_TIME.set(Instant::now()).ok();
 }
 
-/// Milliseconds since boot, used as the clock for auth rate limiting.
 fn now_ms() -> u64 {
     BOOT_TIME
         .get()

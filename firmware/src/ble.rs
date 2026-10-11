@@ -1,10 +1,11 @@
-use esp32_nimble::{BLEAdvertisementData, BLEDevice, NimbleProperties};
+use esp32_nimble::utilities::mutex::Mutex;
+use esp32_nimble::{BLEAdvertisementData, BLECharacteristic, BLEDevice, NimbleProperties};
 use log::{info, warn};
 use std::sync::Arc;
 
 use ayphr_protocol::{
-    FIRMWARE_MANUFACTURER_ID, FIRMWARE_RX_CHARACTERISTIC_UUID, FIRMWARE_SERVICE_UUID,
-    FIRMWARE_TX_CHARACTERISTIC_UUID,
+    BLE_FRAME_HEADER_LEN, BLE_NOTIFY_CHUNK_SIZE, FIRMWARE_MANUFACTURER_ID,
+    FIRMWARE_RX_CHARACTERISTIC_UUID, FIRMWARE_SERVICE_UUID, FIRMWARE_TX_CHARACTERISTIC_UUID,
 };
 
 use crate::command_processor;
@@ -27,9 +28,6 @@ fn advertising_data(setup: &DeviceSetup, dev_name: &str) -> BLEAdvertisementData
     adv_data
 }
 
-/// Re-applies the device name and advertisement payload so a rename or setup
-/// change is visible to scanners without a reboot. Best effort: failures are
-/// logged and the previous advertisement stays in place.
 pub fn refresh_advertising(setup: &DeviceSetup) {
     let dev_name = setup.device_name_for_advertising();
 
@@ -97,20 +95,45 @@ pub fn init(setup: Arc<DeviceSetup>) {
         let response = command_processor::process_ble_request(&setup_handler, payload);
         if !response.is_empty() {
             info!("Sending BLE response bytes={}", response.len());
-            tx_writer.lock().set_value(&response).notify();
+            notify_response(&tx_writer, &response);
         }
     });
 
     let dev_name = setup.device_name_for_advertising();
-    BLEDevice::set_device_name(&dev_name).unwrap();
+    if let Err(error) = BLEDevice::set_device_name(&dev_name) {
+        warn!("Failed to set BLE device name: {:?}", error);
+    }
 
     let mut adv_data = advertising_data(&setup, &dev_name);
 
-    ble_advertising.lock().set_data(&mut adv_data).unwrap();
-    ble_advertising.lock().start().unwrap();
+    if let Err(error) = ble_advertising.lock().set_data(&mut adv_data) {
+        warn!("Failed to configure BLE advertisement data: {:?}", error);
+    }
+    if let Err(error) = ble_advertising.lock().start() {
+        warn!("Failed to start BLE advertising: {:?}", error);
+    }
 
     info!(
         "BLE advertising started: name='{}', UUID='{}', MFG_ID=0x{:04X}",
         dev_name, service_uuid, FIRMWARE_MANUFACTURER_ID
     );
+}
+
+fn notify_response(tx_writer: &Arc<Mutex<BLECharacteristic>>, response: &[u8]) {
+    if response.len() > u16::MAX as usize {
+        warn!(
+            "Response of {} bytes exceeds the BLE frame limit",
+            response.len()
+        );
+        return;
+    }
+
+    let mut frame = Vec::with_capacity(BLE_FRAME_HEADER_LEN + response.len());
+    frame.extend_from_slice(&(response.len() as u16).to_le_bytes());
+    frame.extend_from_slice(response);
+
+    let mut writer = tx_writer.lock();
+    for chunk in frame.chunks(BLE_NOTIFY_CHUNK_SIZE) {
+        writer.set_value(chunk).notify();
+    }
 }

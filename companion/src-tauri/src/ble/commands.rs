@@ -266,11 +266,21 @@ pub async fn update_firmware_ble(
 ) -> Result<(), String> {
     let firmware_data = std::fs::read(&firmware_path)
         .map_err(|error| log_string_error("failed to read firmware file", error, "ble"))?;
+    let signature = commands::load_signature_for_firmware(&firmware_path)
+        .map_err(|error| log_string_error("failed to load firmware signature", error, "ble"))?;
     let connection = ensure_connected(device_id.clone(), &store)
         .await
         .map_err(|error| log_string_error("firmware update connect failed", error, "ble"))?;
     let transport = Transport::Ble(connection);
-    commands::do_update_firmware(&transport, firmware_data, &app, BLE_CHUNK_SIZE, "ble").await
+    commands::do_update_firmware(
+        &transport,
+        firmware_data,
+        signature,
+        &app,
+        BLE_CHUNK_SIZE,
+        "ble",
+    )
+    .await
 }
 
 #[tauri::command]
@@ -278,6 +288,7 @@ pub async fn download_and_update_firmware_ble(
     device_id: String,
     download_url: String,
     expected_sha256: String,
+    expected_signature: String,
     app: AppHandle,
     store: State<'_, BleDeviceStore>,
 ) -> Result<(), String> {
@@ -289,6 +300,7 @@ pub async fn download_and_update_firmware_ble(
         &transport,
         &download_url,
         &expected_sha256,
+        &expected_signature,
         &app,
         BLE_CHUNK_SIZE,
         "ble",
@@ -315,7 +327,6 @@ pub async fn disconnect_ble_device(
     store: State<'_, BleDeviceStore>,
 ) -> Result<(), String> {
     let connection = {
-        store.authenticated_cache.lock().unwrap().remove(&device_id);
         let mut guard = store.connections.lock().unwrap();
         guard.remove(&device_id)
     };
@@ -428,11 +439,6 @@ async fn ensure_connected(
             )
         })?;
 
-    let authenticated = {
-        let guard = store.authenticated_cache.lock().unwrap();
-        guard.contains_key(&device_id)
-    };
-
     let initial_setup_complete = {
         let devices = store.devices.lock().unwrap();
         devices
@@ -449,7 +455,7 @@ async fn ensure_connected(
         rx_characteristic,
         tx_characteristic,
         setup_complete: initial_setup_complete,
-        authenticated,
+        authenticated: false,
         command_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
     })
 }

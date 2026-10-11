@@ -14,9 +14,8 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
     let adapter = get_primary_adapter().await?;
 
     if adapter.start_scan(ScanFilter::default()).await.is_err() {
-        let empty_devices = Vec::new();
-        *store.devices.lock().unwrap() = empty_devices.clone();
-        let _ = app.emit(BLE_DEVICES_UPDATED_EVENT, empty_devices);
+        *store.devices.lock().unwrap() = Vec::new();
+        let _ = app.emit(BLE_DEVICES_UPDATED_EVENT, Vec::<BleDeviceSnapshot>::new());
         return Err("failed to start BLE scan".to_string());
     }
 
@@ -115,14 +114,14 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
             };
 
             upsert_live_peripheral(&store, &peripheral_id, peripheral.clone());
-            seen_devices.insert(peripheral_id, (snapshot, now));
+            seen_devices.insert(peripheral_id.to_owned(), (snapshot, now));
         }
 
         seen_devices.retain(|_, (_, seen_at)| seen_at.elapsed() <= DEVICE_RETENTION_WINDOW);
 
         let mut active_devices = seen_devices
-            .iter_mut()
-            .map(|(_, (snapshot, seen_at))| {
+            .values_mut()
+            .map(|(snapshot, seen_at)| {
                 snapshot.last_seen_seconds_ago = seen_at.elapsed().as_secs();
                 snapshot.clone()
             })
@@ -130,8 +129,8 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
 
         active_devices.sort_by_key(|device| std::cmp::Reverse(device.signal_strength));
 
-        *store.devices.lock().unwrap() = active_devices.clone();
-        let _ = app.emit(BLE_DEVICES_UPDATED_EVENT, active_devices);
+        let _ = app.emit(BLE_DEVICES_UPDATED_EVENT, &active_devices);
+        *store.devices.lock().unwrap() = active_devices;
 
         tokio::time::sleep(SCAN_INTERVAL).await;
     }

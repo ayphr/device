@@ -117,16 +117,14 @@ pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Re
             crate::serial::protocol::invalidate_port(disappeared);
         }
 
-        // Forget bookkeeping for ports that are physically gone so a
-        // reconnected device goes through candidate screening again.
         known_geo_ports.retain(|port_name| present_ports.contains(port_name));
         probe_backoff.retain(|port_name, _| present_ports.contains(port_name));
 
         seen_devices.retain(|_, (_, seen_at)| seen_at.elapsed() <= DEVICE_RETENTION_WINDOW);
 
         let mut active_devices = seen_devices
-            .iter_mut()
-            .map(|(_, (snapshot, seen_at))| {
+            .values_mut()
+            .map(|(snapshot, seen_at)| {
                 snapshot.last_seen_seconds_ago = seen_at.elapsed().as_secs();
                 snapshot.clone()
             })
@@ -134,8 +132,8 @@ pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Re
 
         active_devices.sort_by(|left, right| left.name.cmp(&right.name));
 
-        *store.devices.lock().unwrap() = active_devices.clone();
-        let _ = app.emit(SERIAL_DEVICES_UPDATED_EVENT, active_devices);
+        let _ = app.emit(SERIAL_DEVICES_UPDATED_EVENT, &active_devices);
+        *store.devices.lock().unwrap() = active_devices;
 
         previous_ports = present_ports;
         tokio::time::sleep(SCAN_INTERVAL).await;
