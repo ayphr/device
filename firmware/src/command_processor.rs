@@ -157,10 +157,7 @@ fn handle_apply_setup(
 ) -> Vec<u8> {
     {
         let state = setup.lock_state();
-        if !bypass_auth
-            && state.data.configured
-            && state.data.auth_required
-            && !state.authenticated
+        if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated
         {
             return vec![RESPONSE_AUTH_FAILED];
         }
@@ -230,10 +227,7 @@ fn handle_apply_setup(
 fn handle_restart(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
     {
         let state = setup.lock_state();
-        if !bypass_auth
-            && state.data.configured
-            && state.data.auth_required
-            && !state.authenticated
+        if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated
         {
             return vec![RESPONSE_AUTH_FAILED];
         }
@@ -247,10 +241,7 @@ fn handle_restart(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
 fn handle_factory_reset(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
     {
         let state = setup.lock_state();
-        if !bypass_auth
-            && state.data.configured
-            && state.data.auth_required
-            && !state.authenticated
+        if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated
         {
             return vec![RESPONSE_AUTH_FAILED];
         }
@@ -282,10 +273,7 @@ fn handle_change_password(
 ) -> Vec<u8> {
     {
         let state = setup.lock_state();
-        if !bypass_auth
-            && state.data.configured
-            && state.data.auth_required
-            && !state.authenticated
+        if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated
         {
             return vec![RESPONSE_AUTH_FAILED];
         }
@@ -341,10 +329,7 @@ fn handle_update_wifi(
 ) -> Vec<u8> {
     {
         let state = setup.lock_state();
-        if !bypass_auth
-            && state.data.configured
-            && state.data.auth_required
-            && !state.authenticated
+        if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated
         {
             return vec![RESPONSE_AUTH_FAILED];
         }
@@ -387,10 +372,7 @@ fn handle_rename_device(
 ) -> Vec<u8> {
     {
         let state = setup.lock_state();
-        if !bypass_auth
-            && state.data.configured
-            && state.data.auth_required
-            && !state.authenticated
+        if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated
         {
             return vec![RESPONSE_AUTH_FAILED];
         }

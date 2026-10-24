@@ -20,10 +20,7 @@ fn write_chunk_size(connection: &ActiveBleConnection) -> usize {
     ((mtu as usize).saturating_sub(4)).max(20)
 }
 
-async fn write_payload(
-    connection: &ActiveBleConnection,
-    payload: &[u8],
-) -> Result<(), String> {
+async fn write_payload(connection: &ActiveBleConnection, payload: &[u8]) -> Result<(), String> {
     let chunk_size = write_chunk_size(connection);
     if payload.is_empty() {
         return Ok(());

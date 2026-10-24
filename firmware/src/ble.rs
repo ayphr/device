@@ -1,9 +1,9 @@
 use esp32_nimble::utilities::mutex::Mutex;
 use esp32_nimble::{BLEAdvertisementData, BLECharacteristic, BLEDevice, NimbleProperties};
 use log::{info, warn};
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
-use std::collections::VecDeque;
 
 use ayphr_protocol::{
     BLE_FRAME_HEADER_LEN, BLE_NOTIFY_CHUNK_SIZE, FIRMWARE_MANUFACTURER_ID,
