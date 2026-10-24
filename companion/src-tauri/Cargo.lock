@@ -243,7 +243,6 @@ dependencies = [
  "ed25519-compact",
  "pbkdf2",
  "sha2 0.11.1",
- "sha2 0.11.1",
 ]
 
 [[package]]
@@ -581,12 +580,6 @@ dependencies = [
  "serde",
  "windows-link",
 ]
-
-[[package]]
-name = "cmov"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "cmov"
@@ -1741,12 +1734,9 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "hmac"
 version = "0.13.0"
-version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
-checksum = "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
 dependencies = [
- "digest 0.11.3",
  "digest 0.11.3",
 ]
 
@@ -2022,7 +2012,7 @@ dependencies = [
  "byteorder-lite",
  "moxcms",
  "num-traits",
- "png 0.18.1",
+ "png",
 ]
 
 [[package]]
@@ -3031,12 +3021,9 @@ dependencies = [
 [[package]]
 name = "pbkdf2"
 version = "0.13.0"
-version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112d82ceb8c5bf524d9af484d4e4970c9fd5a0cc15ba14ad93dccd28873b0629"
-checksum = "112d82ceb8c5bf524d9af484d4e4970c9fd5a0cc15ba14ad93dccd28873b0629"
 dependencies = [
- "digest 0.11.3",
  "digest 0.11.3",
  "hmac",
 ]
