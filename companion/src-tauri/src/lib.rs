@@ -47,8 +47,26 @@ fn ensure_tray_icon(app: &AppHandle) -> tauri::Result<()> {
         .item(&MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?)
         .build()?;
 
-    if let Some(icon) = app.default_window_icon().cloned() {
-        let _tray = tauri::tray::TrayIconBuilder::with_id("main")
+    #[cfg(target_os = "macos")]
+    let tray_icon = {
+        let tray_icon_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("icons")
+            .join("tray-icon.png");
+        std::fs::read(&tray_icon_path).ok().and_then(|bytes| {
+            image::load_from_memory(&bytes)
+                .ok()
+                .map(|img| {
+                    let rgba = img.to_rgba8();
+                    let (width, height) = rgba.dimensions();
+                    tauri::image::Image::new_owned(rgba.into_raw(), width, height)
+                })
+        })
+    };
+    #[cfg(not(target_os = "macos"))]
+    let tray_icon = app.default_window_icon().cloned();
+
+    if let Some(icon) = tray_icon {
+        let mut tray_builder = tauri::tray::TrayIconBuilder::with_id("main")
             .menu(&tray_menu)
             .icon(icon)
             .on_menu_event(|app, event| match event.id().as_ref() {
@@ -60,8 +78,12 @@ fn ensure_tray_icon(app: &AppHandle) -> tauri::Result<()> {
                 }
                 "quit" => app.exit(0),
                 _ => {}
-            })
-            .build(app)?;
+            });
+        #[cfg(target_os = "macos")]
+        {
+            tray_builder = tray_builder.icon_as_template(true);
+        }
+        let _tray = tray_builder.build(app)?;
     } else {
         warn!("skipping tray icon setup because no default window icon is available");
     }

@@ -31,5 +31,6 @@ uuid = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 ureq = "3"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 ayphr-protocol = { path = "../../shared" }

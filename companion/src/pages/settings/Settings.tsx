@@ -251,7 +251,7 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
                 <h4>Check for updates</h4>
                 <p>Manually check for available updates and view release details</p>
               </div>
-              <div>
+              <div className={styles['settings-page__update-actions']}>
                 <Button
                   variant="secondary"
                   onClick={() => onCheckForUpdates?.()}
