@@ -59,7 +59,14 @@ pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Re
 
     loop {
         let now = Instant::now();
-        let ports = serialport::available_ports().map_err(|error| error.to_string())?;
+        let ports = match serialport::available_ports() {
+            Ok(ports) => ports,
+            Err(error) => {
+                tracing::warn!("Serial port enumeration failed, retrying: {error}");
+                tokio::time::sleep(SCAN_INTERVAL).await;
+                continue;
+            }
+        };
         let mut present_ports = HashSet::new();
 
         for port in ports {
@@ -82,7 +89,8 @@ pub async fn scan_serial_devices(app: AppHandle, store: SerialDeviceStore) -> Re
 
             let status = match query_status(&port_name).await {
                 Ok(status) => status,
-                Err(_) => {
+                Err(error) => {
+                    tracing::debug!("Serial probe failed for {}: {}", port_name, error);
                     probe_backoff.insert(port_name.clone(), Instant::now());
                     continue;
                 }
