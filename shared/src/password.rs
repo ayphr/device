@@ -12,8 +12,10 @@ const PBKDF2_SCHEME: &str = "pbkdf2$sha256$";
 
 const LEGACY_HASH_HEX_LEN: usize = 64;
 
+const MAX_PBKDF2_ITERATIONS: u32 = 10_000_000;
+
 pub fn hash_password(password: &str, salt: &[u8], iterations: u32) -> String {
-    let iterations = iterations.max(1);
+    let iterations = iterations.max(1).min(MAX_PBKDF2_ITERATIONS);
     let mut derived = [0u8; PASSWORD_HASH_LEN];
     pbkdf2_hmac::<Sha256>(password.as_bytes(), salt, iterations, &mut derived);
 
@@ -55,7 +57,7 @@ fn verify_pbkdf2(rest: &str, password: &str) -> bool {
     let Some(iterations) = parse_u32(iterations) else {
         return false;
     };
-    if iterations == 0 {
+    if iterations == 0 || iterations > MAX_PBKDF2_ITERATIONS {
         return false;
     }
 

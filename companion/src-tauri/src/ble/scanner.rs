@@ -23,18 +23,23 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
 
     loop {
         let now = Instant::now();
-        let peripherals = adapter
-            .peripherals()
-            .await
-            .map_err(|error| error.to_string())?;
+        let peripherals = match adapter.peripherals().await {
+            Ok(peripherals) => peripherals,
+            Err(error) => {
+                tracing::warn!("BLE peripheral enumeration failed, retrying: {error}");
+                tokio::time::sleep(SCAN_INTERVAL).await;
+                continue;
+            }
+        };
 
         for peripheral in peripherals {
-            let Some(properties) = peripheral
-                .properties()
-                .await
-                .map_err(|error| error.to_string())?
-            else {
-                continue;
+            let properties = match peripheral.properties().await {
+                Ok(Some(properties)) => properties,
+                Ok(None) => continue,
+                Err(error) => {
+                    tracing::debug!("Skipping BLE peripheral properties: {error}");
+                    continue;
+                }
             };
 
             let advertised_service_uuids = properties
@@ -63,7 +68,7 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
             let rssi = properties.rssi;
             let signal_strength = signal_strength_from_rssi(rssi);
             let model_id = "geo-gen1".to_string();
-            let connectable = properties.rssi.is_some();
+            let connectable = true;
             let setup_complete = properties
                 .manufacturer_data
                 .get(&FIRMWARE_MANUFACTURER_ID)

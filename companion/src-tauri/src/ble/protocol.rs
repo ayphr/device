@@ -9,6 +9,56 @@ use crate::protocol::format_bytes;
 use ayphr_protocol::{BLE_FRAME_HEADER_LEN, MAX_BLE_FRAME_PAYLOAD};
 
 const STALE_DRAIN_GRACE: std::time::Duration = std::time::Duration::from_millis(5);
+const DEFAULT_BLE_WRITE_CHUNK: usize = 180;
+
+fn write_chunk_size(connection: &ActiveBleConnection) -> usize {
+    let mtu = connection.peripheral.mtu();
+    if mtu == 0 {
+        return DEFAULT_BLE_WRITE_CHUNK;
+    }
+    // ATT write payload max is MTU-3; leave small margin
+    ((mtu as usize).saturating_sub(4)).max(20)
+}
+
+async fn write_payload(
+    connection: &ActiveBleConnection,
+    payload: &[u8],
+) -> Result<(), String> {
+    let chunk_size = write_chunk_size(connection);
+    if payload.is_empty() {
+        return Ok(());
+    }
+    if payload.len() <= chunk_size {
+        connection
+            .peripheral
+            .write(
+                &connection.rx_characteristic,
+                payload,
+                btleplug::api::WriteType::WithoutResponse,
+            )
+            .await
+            .map_err(|error| {
+                warn!("[ble] write failed: {}", error);
+                error.to_string()
+            })?;
+        return Ok(());
+    }
+    for chunk in payload.chunks(chunk_size) {
+        connection
+            .peripheral
+            .write(
+                &connection.rx_characteristic,
+                chunk,
+                btleplug::api::WriteType::WithoutResponse,
+            )
+            .await
+            .map_err(|error| {
+                warn!("[ble] write failed: {}", error);
+                error.to_string()
+            })?;
+    }
+    Ok(())
+}
 
 pub async fn send_command(
     connection: &ActiveBleConnection,
@@ -52,18 +102,7 @@ pub async fn send_commands(
             format_bytes(payload),
             connection.tx_characteristic.uuid
         );
-        connection
-            .peripheral
-            .write(
-                &connection.rx_characteristic,
-                payload,
-                btleplug::api::WriteType::WithoutResponse,
-            )
-            .await
-            .map_err(|error| {
-                warn!("[ble] write failed: {}", error);
-                error.to_string()
-            })?;
+        write_payload(connection, payload).await?;
     }
 
     tokio::time::timeout(COMMAND_TIMEOUT, async {
