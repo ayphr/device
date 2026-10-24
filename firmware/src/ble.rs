@@ -1,15 +1,20 @@
 use esp32_nimble::utilities::mutex::Mutex;
 use esp32_nimble::{BLEAdvertisementData, BLECharacteristic, BLEDevice, NimbleProperties};
 use log::{info, warn};
+use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 
 use ayphr_protocol::{
     BLE_FRAME_HEADER_LEN, BLE_NOTIFY_CHUNK_SIZE, FIRMWARE_MANUFACTURER_ID,
     FIRMWARE_RX_CHARACTERISTIC_UUID, FIRMWARE_SERVICE_UUID, FIRMWARE_TX_CHARACTERISTIC_UUID,
+    MAX_BLE_FRAME_PAYLOAD,
 };
 
 use crate::command_processor;
 use crate::config::DeviceSetup;
+
+static BLE_RX_BUFFER: StdMutex<VecDeque<u8>> = StdMutex::new(VecDeque::new());
 
 /// Builds the advertisement payload advertising the given device state.
 fn advertising_data(setup: &DeviceSetup, dev_name: &str) -> BLEAdvertisementData {
@@ -70,6 +75,9 @@ pub fn init(setup: Arc<DeviceSetup>) {
     server.on_disconnect(move |_desc, _reason| {
         info!("BLE Central Disconnected");
         setup_on_disconnect.reset_authentication();
+        if let Ok(mut buffer) = BLE_RX_BUFFER.lock() {
+            buffer.clear();
+        }
     });
 
     let service_uuid = esp32_nimble::uuid128!(FIRMWARE_SERVICE_UUID);
@@ -91,7 +99,7 @@ pub fn init(setup: Arc<DeviceSetup>) {
     rx_char.lock().on_write(move |args| {
         let payload = args.recv_data();
         info!("Received BLE request bytes={}", payload.len());
-
+        // Process each write as a complete command for compatibility
         let response = command_processor::process_ble_request(&setup_handler, payload);
         if !response.is_empty() {
             info!("Sending BLE response bytes={}", response.len());

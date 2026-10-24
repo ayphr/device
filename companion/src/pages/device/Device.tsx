@@ -119,8 +119,13 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
 
     void loadFirmwareInfo();
 
+    const timer = setInterval(() => {
+      if (!cancelled) void loadFirmwareInfo();
+    }, 10000);
+
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, [device.id, device.transport]);
 
@@ -148,9 +153,12 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
     if (activeSection !== 'live') return;
 
     let cancelled = false;
+    let inFlight = false;
     const command = device.transport === 'serial' ? 'get_live_data_serial' : 'get_live_data_ble';
 
     const poll = async () => {
+      if (inFlight || cancelled) return;
+      inFlight = true;
       try {
         const result = await invoke<LiveDataResult | null>(command, { deviceId: device.id });
         if (!cancelled) {
@@ -161,6 +169,8 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
         if (!cancelled) {
           setLiveDataError(typeof error === 'string' ? error : 'Failed to read live data');
         }
+      } finally {
+        inFlight = false;
       }
     };
 
@@ -301,12 +311,20 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
         ? normalizeFirmwareVersion(metadata.version)
         : null;
 
-      if (
-        installedVersion &&
-        latestVersion &&
-        compareVersions(latestVersion, installedVersion) <= 0
-      ) {
+      if (installedVersion && latestVersion) {
+        if (compareVersions(latestVersion, installedVersion) <= 0) {
+          setUpdateAvailable(null);
+          setFirmwareError('You’re up to date.');
+          return;
+        }
+      } else if (installedVersion && !latestVersion) {
         setUpdateAvailable(null);
+        setFirmwareError('You’re up to date.');
+        return;
+      } else if (!installedVersion && latestVersion) {
+        // Can't determine installed version; do not auto-suggest update
+        setUpdateAvailable(null);
+        setFirmwareError('Unable to determine installed firmware version');
         return;
       }
 
@@ -346,6 +364,18 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
       });
 
       setUpdateAvailable(null);
+      // Give device time to reboot and reload info
+      setTimeout(() => {
+        const infoCmd = device.transport === 'serial' ? 'get_firmware_info_serial' : 'get_firmware_info_ble';
+        invoke<FirmwareInfoResult>(infoCmd, { deviceId: device.id })
+          .then((info) => {
+            setFirmwareInfo(info);
+            setFirmwareError(null);
+          })
+          .catch(() => {
+            setFirmwareInfo(null);
+          });
+      }, 5000);
     } catch (error) {
       setFirmwareProgress({ step: 'error', progress: 0, message: typeof error === 'string' ? error : 'Update failed' });
       setIsUpdatingFirmware(false);
@@ -383,6 +413,16 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
       const command = device.transport === 'serial' ? 'update_firmware_serial' : 'update_firmware_ble';
       await invoke(command, { deviceId: device.id, firmwarePath: selectedPath });
       setUpdateAvailable(null);
+      setTimeout(() => {
+        const infoCmd = device.transport === 'serial' ? 'get_firmware_info_serial' : 'get_firmware_info_ble';
+        invoke<FirmwareInfoResult>(infoCmd, { deviceId: device.id })
+          .then((info) => {
+            setFirmwareInfo(info);
+            setFirmwareError(null);
+          })
+          .catch(() => setFirmwareInfo(null));
+      }, 5000);
+      setIsUpdatingFirmware(false);
     } catch (error) {
       setFirmwareProgress({
         step: 'error',
@@ -401,6 +441,15 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
       const command = device.transport === 'serial' ? 'ota_rollback_serial' : 'ota_rollback_ble';
       await invoke(command, { deviceId: device.id });
       setFirmwareInfo(null);
+      setTimeout(() => {
+        const infoCmd = device.transport === 'serial' ? 'get_firmware_info_serial' : 'get_firmware_info_ble';
+        invoke<FirmwareInfoResult>(infoCmd, { deviceId: device.id })
+          .then((info) => {
+            setFirmwareInfo(info);
+            setFirmwareError(null);
+          })
+          .catch(() => setFirmwareInfo(null));
+      }, 5000);
     } catch (error) {
       setFirmwareError(typeof error === 'string' ? error : 'Rollback failed');
     } finally {

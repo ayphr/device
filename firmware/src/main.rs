@@ -105,6 +105,7 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
+    // Mark valid after subsystems initialized
     ota::mark_valid();
 
     let serial = identity::serial();

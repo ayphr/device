@@ -68,7 +68,12 @@ fn write_frame(uart: &UartDriver<'_>, payload: &[u8]) -> anyhow::Result<()> {
 
     let mut written = 0;
     while written < frame.len() {
-        written += uart.write(&frame[written..])?;
+        let n = uart.write(&frame[written..])?;
+        if n == 0 {
+            std::thread::sleep(Duration::from_millis(1));
+            continue;
+        }
+        written += n;
     }
 
     Ok(())

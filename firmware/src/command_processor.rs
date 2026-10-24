@@ -157,7 +157,8 @@ fn handle_apply_setup(
 ) -> Vec<u8> {
     {
         let state = setup.lock_state();
-        if !bypass_auth && state.data.configured && !state.authenticated {
+        if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated
+        {
             return vec![RESPONSE_AUTH_FAILED];
         }
     }
@@ -226,7 +227,8 @@ fn handle_apply_setup(
 fn handle_restart(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
     {
         let state = setup.lock_state();
-        if !bypass_auth && state.data.configured && !state.authenticated {
+        if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated
+        {
             return vec![RESPONSE_AUTH_FAILED];
         }
     }
@@ -239,7 +241,8 @@ fn handle_restart(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
 fn handle_factory_reset(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
     {
         let state = setup.lock_state();
-        if !bypass_auth && state.data.configured && !state.authenticated {
+        if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated
+        {
             return vec![RESPONSE_AUTH_FAILED];
         }
     }
@@ -248,9 +251,13 @@ fn handle_factory_reset(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
     let result = DeviceSetup::save_to_nvs(&setup.nvs, &default_data);
 
     if result.is_ok() {
-        let mut state = setup.lock_state();
-        state.data = default_data;
-        state.authenticated = false;
+        {
+            let mut state = setup.lock_state();
+            state.data = default_data;
+            state.authenticated = false;
+            state.auth_limiter.reset();
+        }
+        crate::ble::refresh_advertising(setup);
         info!("Factory reset complete");
         vec![RESPONSE_FACTORY_RESET_OK]
     } else {
@@ -266,7 +273,8 @@ fn handle_change_password(
 ) -> Vec<u8> {
     {
         let state = setup.lock_state();
-        if !bypass_auth && state.data.configured && !state.authenticated {
+        if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated
+        {
             return vec![RESPONSE_AUTH_FAILED];
         }
     }
@@ -321,7 +329,8 @@ fn handle_update_wifi(
 ) -> Vec<u8> {
     {
         let state = setup.lock_state();
-        if !bypass_auth && state.data.configured && !state.authenticated {
+        if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated
+        {
             return vec![RESPONSE_AUTH_FAILED];
         }
     }
@@ -363,7 +372,8 @@ fn handle_rename_device(
 ) -> Vec<u8> {
     {
         let state = setup.lock_state();
-        if !bypass_auth && state.data.configured && !state.authenticated {
+        if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated
+        {
             return vec![RESPONSE_AUTH_FAILED];
         }
     }
@@ -443,7 +453,7 @@ fn ota_precheck(setup: &DeviceSetup, bypass_auth: bool) -> Option<Vec<u8>> {
         log::warn!("Rejecting OTA command: device is not provisioned");
         return Some(vec![RESPONSE_ERROR]);
     }
-    if !bypass_auth && !state.authenticated {
+    if !bypass_auth && state.data.auth_required && !state.authenticated {
         return Some(vec![RESPONSE_AUTH_FAILED]);
     }
     None

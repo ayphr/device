@@ -351,7 +351,9 @@ function App() {
 
       setSelectedDevice(updatedDevice);
 
-      if (device.transport === 'serial' || !connection.authRequired || connection.authenticated) {
+      if (!connection.setupComplete) {
+        setPage('setup');
+      } else if (device.transport === 'serial' || !connection.authRequired || connection.authenticated) {
         setPage('device');
       } else {
         setPage('auth');
