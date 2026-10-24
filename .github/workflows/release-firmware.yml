@@ -15,7 +15,7 @@ jobs:
   build:
     name: Build Firmware
     if: startsWith(github.ref, 'refs/tags/firmware-v') || contains(github.event.pull_request.labels.*.name, 'firmware')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
 
@@ -40,7 +40,9 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libclang-dev dfu-util python3 python3-pip esptool
+          sudo apt-get install -y cmake ninja-build libclang-dev dfu-util python3.11 python3.11-venv python3.11-dev python3-pip esptool
+          sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+          sudo update-alternatives --set python3 /usr/bin/python3.11
 
       - name: Setup Espressif Rust Toolchain (RISC-V)
         shell: bash
@@ -54,10 +56,10 @@ jobs:
           rustup toolchain link esp "$(rustup which --toolchain nightly-2026-04-15 rustc | xargs dirname | xargs dirname)"
           rustup default esp
           set -a
-          . "$HOME/export-esp.sh"
+          [ -f "$HOME/export-esp.sh" ] && . "$HOME/export-esp.sh"
           set +a
           echo "PATH=$PATH" >> "$GITHUB_ENV"
-          echo "IDF_TOOLS_PATH=$IDF_TOOLS_PATH" >> "$GITHUB_ENV"
+          [ -n "$IDF_TOOLS_PATH" ] && echo "IDF_TOOLS_PATH=$IDF_TOOLS_PATH" >> "$GITHUB_ENV"
 
       - name: Sync package version to release tag
         if: startsWith(github.ref, 'refs/tags/firmware-v')
@@ -202,7 +204,7 @@ jobs:
     name: Publish Firmware Release
     needs: build
     if: startsWith(github.ref, 'refs/tags/firmware-v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
 
