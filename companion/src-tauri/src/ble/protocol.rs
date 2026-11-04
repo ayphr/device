@@ -111,10 +111,16 @@ pub async fn send_commands(
     }
 
     tokio::time::timeout(COMMAND_TIMEOUT, async {
+        // Accumulate notification bytes across the whole batch so that frames
+        // which arrive coalesced in a single notification (or split across
+        // several) are reassembled without losing trailing bytes.
+        let mut buffer: Vec<u8> = Vec::new();
         let mut responses = Vec::with_capacity(payloads.len());
         for _ in 0..payloads.len() {
-            responses
-                .push(read_frame(&mut notifications, connection.tx_characteristic.uuid).await?);
+            responses.push(
+                read_frame(&mut notifications, connection.tx_characteristic.uuid, &mut buffer)
+                    .await?,
+            );
         }
         Ok::<Vec<Vec<u8>>, String>(responses)
     })
@@ -125,20 +131,31 @@ pub async fn send_commands(
     })?
 }
 
-async fn read_frame<S>(notifications: &mut S, tx_uuid: Uuid) -> Result<Vec<u8>, String>
+async fn read_frame<S>(
+    notifications: &mut S,
+    tx_uuid: Uuid,
+    buffer: &mut Vec<u8>,
+) -> Result<Vec<u8>, String>
 where
     S: Stream<Item = ValueNotification> + Unpin,
 {
-    let mut collected: Vec<u8> = Vec::new();
-    let mut frame_len: Option<usize> = None;
-
     loop {
-        let complete = match frame_len {
-            Some(total) => collected.len() >= total,
-            None => collected.len() >= BLE_FRAME_HEADER_LEN,
-        };
-        if complete {
-            break;
+        // Reassemble a complete frame from the shared buffer, preserving any
+        // trailing bytes for subsequent frames.
+        if buffer.len() >= BLE_FRAME_HEADER_LEN {
+            let payload_len =
+                u16::from_le_bytes([buffer[0], buffer[1]]) as usize;
+            if payload_len > MAX_BLE_FRAME_PAYLOAD {
+                return Err(format!(
+                    "BLE response length {payload_len} exceeds max limit of {MAX_BLE_FRAME_PAYLOAD} bytes"
+                ));
+            }
+            let total = BLE_FRAME_HEADER_LEN + payload_len;
+            if buffer.len() >= total {
+                let payload = buffer[BLE_FRAME_HEADER_LEN..total].to_vec();
+                buffer.drain(..total);
+                return Ok(payload);
+            }
         }
 
         let notification = match notifications.next().await {
@@ -155,21 +172,8 @@ where
             "[ble] received notification bytes={}",
             format_bytes(&notification.value)
         );
-        collected.extend_from_slice(&notification.value);
-
-        if frame_len.is_none() && collected.len() >= BLE_FRAME_HEADER_LEN {
-            let payload_len = u16::from_le_bytes([collected[0], collected[1]]) as usize;
-            if payload_len > MAX_BLE_FRAME_PAYLOAD {
-                return Err(format!(
-                    "BLE response length {payload_len} exceeds max limit of {MAX_BLE_FRAME_PAYLOAD} bytes"
-                ));
-            }
-            frame_len = Some(BLE_FRAME_HEADER_LEN + payload_len);
-        }
+        buffer.extend_from_slice(&notification.value);
     }
-
-    let total = frame_len.unwrap_or(BLE_FRAME_HEADER_LEN);
-    Ok(collected[BLE_FRAME_HEADER_LEN..total].to_vec())
 }
 
 async fn drain_stale_notifications<S>(notifications: &mut S)

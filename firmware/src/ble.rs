@@ -8,6 +8,7 @@ use std::sync::Mutex as StdMutex;
 use ayphr_protocol::{
     BLE_FRAME_HEADER_LEN, BLE_NOTIFY_CHUNK_SIZE, FIRMWARE_MANUFACTURER_ID,
     FIRMWARE_RX_CHARACTERISTIC_UUID, FIRMWARE_SERVICE_UUID, FIRMWARE_TX_CHARACTERISTIC_UUID,
+    MAX_BLE_FRAME_PAYLOAD,
 };
 
 use crate::command_processor;
@@ -110,6 +111,14 @@ pub fn init(setup: Arc<DeviceSetup>) {
             while buffer.len() >= BLE_FRAME_HEADER_LEN {
                 let expected_len = u16::from_le_bytes([buffer[0], buffer[1]]) as usize;
                 if expected_len == 0 {
+                    buffer.drain(..BLE_FRAME_HEADER_LEN);
+                    continue;
+                }
+                if expected_len > MAX_BLE_FRAME_PAYLOAD {
+                    warn!(
+                        "Rejecting oversized BLE frame length {} (max {})",
+                        expected_len, MAX_BLE_FRAME_PAYLOAD
+                    );
                     buffer.drain(..BLE_FRAME_HEADER_LEN);
                     continue;
                 }
