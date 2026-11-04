@@ -118,8 +118,12 @@ pub async fn send_commands(
         let mut responses = Vec::with_capacity(payloads.len());
         for _ in 0..payloads.len() {
             responses.push(
-                read_frame(&mut notifications, connection.tx_characteristic.uuid, &mut buffer)
-                    .await?,
+                read_frame(
+                    &mut notifications,
+                    connection.tx_characteristic.uuid,
+                    &mut buffer,
+                )
+                .await?,
             );
         }
         Ok::<Vec<Vec<u8>>, String>(responses)
@@ -143,8 +147,7 @@ where
         // Reassemble a complete frame from the shared buffer, preserving any
         // trailing bytes for subsequent frames.
         if buffer.len() >= BLE_FRAME_HEADER_LEN {
-            let payload_len =
-                u16::from_le_bytes([buffer[0], buffer[1]]) as usize;
+            let payload_len = u16::from_le_bytes([buffer[0], buffer[1]]) as usize;
             if payload_len > MAX_BLE_FRAME_PAYLOAD {
                 return Err(format!(
                     "BLE response length {payload_len} exceeds max limit of {MAX_BLE_FRAME_PAYLOAD} bytes"
