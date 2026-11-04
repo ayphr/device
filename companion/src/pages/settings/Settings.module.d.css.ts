@@ -14,6 +14,9 @@ declare const classNames: {
   readonly "settings-page__about-title": "settings-page__about-title";
   readonly "settings-page__description": "settings-page__description";
   readonly "settings-page__value": "settings-page__value";
+  readonly "settings-page__update-actions": "settings-page__update-actions";
+  readonly "settings-page__update-feedback": "settings-page__update-feedback";
+  readonly "settings-page__update-feedback--error": "settings-page__update-feedback--error";
   readonly "settings-page__about-links": "settings-page__about-links";
 };
 export = classNames;

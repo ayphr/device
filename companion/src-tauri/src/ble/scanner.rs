@@ -8,7 +8,7 @@ use super::constants::BLE_DEVICES_UPDATED_EVENT;
 use super::state::{upsert_live_peripheral, BleDeviceSnapshot, BleDeviceStore};
 use crate::constants::{DEVICE_RETENTION_WINDOW, SCAN_INTERVAL};
 use crate::protocol::format_bytes;
-use ayphr_protocol::{FIRMWARE_MANUFACTURER_ID, FIRMWARE_SERVICE_UUID};
+use ayphr_protocol::FIRMWARE_MANUFACTURER_ID;
 
 pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(), String> {
     let adapter = get_primary_adapter().await?;
@@ -50,11 +50,12 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
             let has_firmware_manufacturer_marker = properties
                 .manufacturer_data
                 .contains_key(&FIRMWARE_MANUFACTURER_ID);
-            let has_firmware_service_uuid = advertised_service_uuids
-                .iter()
-                .any(|uuid| uuid.eq_ignore_ascii_case(FIRMWARE_SERVICE_UUID));
 
-            if !has_firmware_manufacturer_marker || !has_firmware_service_uuid {
+            // Require the Ayphr manufacturer marker. The 128-bit service UUID is
+            // also advertised, but some platforms (notably macOS CoreBluetooth)
+            // do not surface it in the advertisement payload, so requiring it
+            // here would hide otherwise valid devices.
+            if !has_firmware_manufacturer_marker {
                 continue;
             }
 
