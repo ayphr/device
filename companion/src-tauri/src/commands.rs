@@ -502,7 +502,7 @@ fn stream_firmware_download(
             // unencoded body and rely on Content-Length rather than ureq's
             // transparent decompression (which hides the length).
             .accept_encoding("identity")
-            .timeout_global(Some(std::time::Duration::from_secs(600)))
+            .timeout_global(None)
             .build(),
     );
     let response = agent
