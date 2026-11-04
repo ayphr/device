@@ -49,15 +49,11 @@ fn ensure_tray_icon(app: &AppHandle) -> tauri::Result<()> {
 
     #[cfg(target_os = "macos")]
     let tray_icon = {
-        let tray_icon_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("icons")
-            .join("tray-icon.png");
-        std::fs::read(&tray_icon_path).ok().and_then(|bytes| {
-            image::load_from_memory(&bytes).ok().map(|img| {
-                let rgba = img.to_rgba8();
-                let (width, height) = rgba.dimensions();
-                tauri::image::Image::new_owned(rgba.into_raw(), width, height)
-            })
+        const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-icon.png");
+        image::load_from_memory(TRAY_ICON_BYTES).ok().map(|img| {
+            let rgba = img.to_rgba8();
+            let (width, height) = rgba.dimensions();
+            tauri::image::Image::new_owned(rgba.into_raw(), width, height)
         })
     };
     #[cfg(not(target_os = "macos"))]
