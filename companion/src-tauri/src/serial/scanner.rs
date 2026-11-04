@@ -17,7 +17,6 @@ const NON_DEVICE_PORT_PATTERNS: &[&str] = &[
     "debug-console",
     "debug_console",
     "AirPods",
-    "WCH",
     "Model",
 ];
 
@@ -190,11 +189,7 @@ mod tests {
 
     #[test]
     fn denylisted_names_are_never_candidates() {
-        for name in [
-            "/dev/tty.Bluetooth-Port",
-            "/dev/cu.WCHUSBSerial110",
-            "/dev/tty.debug-console",
-        ] {
+        for name in ["/dev/tty.Bluetooth-Port", "/dev/tty.debug-console"] {
             assert!(!is_probe_candidate(&usb_port(name, 0x1A86)), "{name}");
         }
     }

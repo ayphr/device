@@ -8,7 +8,6 @@ use std::sync::Mutex as StdMutex;
 use ayphr_protocol::{
     BLE_FRAME_HEADER_LEN, BLE_NOTIFY_CHUNK_SIZE, FIRMWARE_MANUFACTURER_ID,
     FIRMWARE_RX_CHARACTERISTIC_UUID, FIRMWARE_SERVICE_UUID, FIRMWARE_TX_CHARACTERISTIC_UUID,
-    MAX_BLE_FRAME_PAYLOAD,
 };
 
 use crate::command_processor;
@@ -97,11 +96,38 @@ pub fn init(setup: Arc<DeviceSetup>) {
     let tx_writer = Arc::clone(&tx_char);
 
     rx_char.lock().on_write(move |args| {
-        let payload = args.recv_data();
-        info!("Received BLE request bytes={}", payload.len());
-        // Process each write as a complete command for compatibility
-        let response = command_processor::process_ble_request(&setup_handler, payload);
-        if !response.is_empty() {
+        let incoming = args.recv_data();
+        if incoming.is_empty() {
+            return;
+        }
+
+        info!("Received BLE request chunk bytes={}", incoming.len());
+
+        let mut responses: Vec<Vec<u8>> = Vec::new();
+        if let Ok(mut buffer) = BLE_RX_BUFFER.lock() {
+            buffer.extend(incoming.iter().copied());
+
+            while buffer.len() >= BLE_FRAME_HEADER_LEN {
+                let expected_len = u16::from_le_bytes([buffer[0], buffer[1]]) as usize;
+                if expected_len == 0 {
+                    buffer.drain(..BLE_FRAME_HEADER_LEN);
+                    continue;
+                }
+                if buffer.len() < BLE_FRAME_HEADER_LEN + expected_len {
+                    break;
+                }
+
+                buffer.drain(..BLE_FRAME_HEADER_LEN);
+                let command: Vec<u8> = buffer.drain(..expected_len).collect();
+                info!("Processing reassembled BLE request bytes={}", command.len());
+                let response = command_processor::process_ble_request(&setup_handler, &command);
+                if !response.is_empty() {
+                    responses.push(response);
+                }
+            }
+        }
+
+        for response in responses {
             info!("Sending BLE response bytes={}", response.len());
             notify_response(&tx_writer, &response);
         }

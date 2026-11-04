@@ -6,7 +6,8 @@ import {
   IconAntennaBars5,
   IconAntennaBarsOff,
   IconBluetoothConnected,
-  IconBluetoothOff,
+  IconCheck,
+  IconX,
   IconUsb,
 } from '@tabler/icons-react';
 import { LiquidChromeLogo } from 'liquidity-react';
@@ -82,12 +83,12 @@ export const DeviceCard = ({
             {signalIcon}
           </span>
           {connected ? (
-            <span className={styles['device-card__status-icon']} title="Bluetooth">
-              <IconBluetoothConnected size={16} />
+            <span className={styles['device-card__status-icon']} title="Connected">
+              <IconCheck size={16} />
             </span>
           ) : (
             <span className={styles['device-card__status-icon']} title="Not connected">
-              <IconBluetoothOff size={16} style={{ opacity: 0.3 }} />
+              <IconX size={16} style={{ opacity: 0.3 }} />
             </span>
           )}
         </div>
