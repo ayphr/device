@@ -6,7 +6,7 @@ use std::time::Duration;
 use crate::command_processor;
 use crate::config::DeviceSetup;
 
-const MAX_PAYLOAD_LEN: usize = 4096;
+const MAX_PAYLOAD_LEN: usize = 8192;
 
 pub fn run_loop(uart: &UartDriver<'_>, setup: &DeviceSetup) {
     loop {

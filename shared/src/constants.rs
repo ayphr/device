@@ -32,8 +32,8 @@ pub const RESPONSE_AUTH_LOCKED: u8 = 0x90;
 pub const RESPONSE_LIVE_DATA: u8 = 0x91;
 pub const RESPONSE_ERROR: u8 = 0xFF;
 
-pub const SERIAL_CHUNK_SIZE: usize = 2048;
-pub const BLE_CHUNK_SIZE: usize = 176;
+pub const SERIAL_CHUNK_SIZE: usize = 4096;
+pub const BLE_CHUNK_SIZE: usize = 1024;
 
 pub const BLE_FRAME_HEADER_LEN: usize = 2;
 pub const BLE_NOTIFY_CHUNK_SIZE: usize = 20;
