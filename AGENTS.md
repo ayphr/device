@@ -19,14 +19,12 @@ App tags use the `app-vX.Y.Z` prefix; firmware tags use `firmware-vX.Y.Z`. Incre
 
 ## Release the companion app
 
-Use `gh release create` to create the tag and the release in one step, marking it as latest. The push of the new tag triggers the `release-app` workflow, which builds all platforms and uploads assets to this release:
+Push a version tag; the `release-app` workflow builds all platforms and creates the release:
 
 ```bash
 VERSION=0.1.34   # replace with the target version
-gh release create "app-v${VERSION}" \
-  --title "App v${VERSION}" \
-  --generate-notes \
-  --latest
+git tag "app-v${VERSION}"
+git push origin "app-v${VERSION}"
 ```
 
 Monitor and verify:
@@ -41,14 +39,12 @@ The `release-app` workflow builds all platforms, then publishes the merged updat
 
 ## Release firmware
 
-Use `gh release create` to create the tag and the release in one step as a prerelease. The push of the new tag triggers the `release-firmware` workflow, which builds, signs, and uploads assets to this release:
+Push a version tag; the `release-firmware` workflow builds, signs, and creates the prerelease:
 
 ```bash
 VERSION=0.1.18   # replace with the target version
-gh release create "firmware-v${VERSION}" \
-  --title "Firmware v${VERSION}" \
-  --generate-notes \
-  --prerelease
+git tag "firmware-v${VERSION}"
+git push origin "firmware-v${VERSION}"
 ```
 
 Monitor and verify:
