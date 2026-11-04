@@ -25,12 +25,20 @@ async fn write_payload(connection: &ActiveBleConnection, payload: &[u8]) -> Resu
     if payload.is_empty() {
         return Ok(());
     }
-    if payload.len() <= chunk_size {
+
+    // Frame the request with a 2-byte little-endian length prefix, matching the
+    // firmware's reassembly logic, so commands larger than a single BLE write
+    // can be fragmented and reassembled correctly.
+    let mut framed = Vec::with_capacity(BLE_FRAME_HEADER_LEN + payload.len());
+    framed.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+    framed.extend_from_slice(payload);
+
+    if framed.len() <= chunk_size {
         connection
             .peripheral
             .write(
                 &connection.rx_characteristic,
-                payload,
+                &framed,
                 btleplug::api::WriteType::WithoutResponse,
             )
             .await
@@ -40,7 +48,7 @@ async fn write_payload(connection: &ActiveBleConnection, payload: &[u8]) -> Resu
             })?;
         return Ok(());
     }
-    for chunk in payload.chunks(chunk_size) {
+    for chunk in framed.chunks(chunk_size) {
         connection
             .peripheral
             .write(

@@ -3,7 +3,7 @@ target = "riscv32imc-esp-espidf"
 
 [target.riscv32imc-esp-espidf]
 linker = "ldproxy"
-runner = "espflash flash --monitor"
+runner = "espflash flash --partition-table partitions.csv --target-app-partition ota_0 --monitor"
 
 [target.xtensa-esp32-espidf]
 linker = "ldproxy"
