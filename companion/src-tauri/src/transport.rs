@@ -25,6 +25,22 @@ impl Transport {
         }
     }
 
+    pub async fn send_command_with_timeout(
+        &self,
+        payload: Vec<u8>,
+        timeout: std::time::Duration,
+    ) -> Result<Vec<u8>, String> {
+        match self {
+            Transport::Ble(conn) => {
+                crate::ble::protocol::send_command_with_timeout(conn, payload, timeout).await
+            }
+            Transport::Serial(id) => {
+                crate::serial::protocol::send_command_with_timeout(id.clone(), payload, timeout)
+                    .await
+            }
+        }
+    }
+
     pub async fn send_commands_batch(
         &self,
         payloads: Vec<Vec<u8>>,

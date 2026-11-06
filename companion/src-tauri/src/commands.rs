@@ -9,6 +9,7 @@ use ayphr_protocol::{
 };
 use tauri::{AppHandle, Emitter};
 
+use crate::constants::OTA_BEGIN_TIMEOUT;
 use crate::protocol::{format_bytes, log_string_error};
 use crate::transport::Transport;
 use crate::types::{
@@ -385,7 +386,7 @@ impl<'a> OtaWriter<'a> {
         begin_cmd.extend_from_slice(signature);
         let response = self
             .transport
-            .send_command(begin_cmd)
+            .send_command_with_timeout(begin_cmd, OTA_BEGIN_TIMEOUT)
             .await
             .map_err(|e| log_string_error("OTA begin failed", e, self.label))?;
         if response.first().copied() != Some(RESPONSE_OTA_BEGIN_OK) {
