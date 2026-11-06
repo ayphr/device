@@ -127,6 +127,8 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
     let cancelled = false;
 
     const loadFirmwareInfo = async () => {
+      if (isUpdatingFirmware) return;
+
       try {
         const command = device.transport === 'serial' ? 'get_firmware_info_serial' : 'get_firmware_info_ble';
         const info = await invoke<FirmwareInfoResult>(command, { deviceId: device.id });
@@ -152,7 +154,7 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
       cancelled = true;
       clearInterval(timer);
     };
-  }, [device.id, device.transport]);
+  }, [device.id, device.transport, isUpdatingFirmware]);
 
   useEffect(() => {
     let unlistenProgress: (() => void) | undefined;
