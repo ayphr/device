@@ -109,7 +109,12 @@ pub fn refresh_snapshots_with_connection_state(store: &BleDeviceStore) {
             .map(|(address, connection)| {
                 (
                     address.clone(),
-                    (connection.authenticated, connection.setup_complete, true),
+                    (
+                        connection.authenticated,
+                        connection.setup_complete,
+                        connection.auth_required,
+                        true,
+                    ),
                 )
             })
             .collect::<HashMap<_, _>>()
@@ -117,12 +122,16 @@ pub fn refresh_snapshots_with_connection_state(store: &BleDeviceStore) {
 
     let mut devices = store.devices.lock().unwrap();
     for device in &mut *devices {
-        if let Some((authenticated, setup_complete, connected)) = connection_state.get(&device.id) {
+        if let Some((authenticated, setup_complete, auth_required, connected)) =
+            connection_state.get(&device.id)
+        {
             device.setup_complete = device.setup_complete || *setup_complete;
             device.authenticated = *authenticated;
+            device.auth_required = *auth_required;
             device.connected = *connected;
         } else {
             device.authenticated = false;
+            device.auth_required = false;
             device.connected = false;
         }
     }
