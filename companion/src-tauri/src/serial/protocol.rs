@@ -90,24 +90,48 @@ pub async fn query_status(port_name: &str) -> Result<ParsedStatus, String> {
 }
 
 pub async fn send_command(port_name: String, payload: Vec<u8>) -> Result<Vec<u8>, String> {
-    tokio::task::spawn_blocking(move || send_command_blocking(&port_name, payload))
+    send_command_with_timeout(port_name, payload, COMMAND_TIMEOUT).await
+}
+
+pub async fn send_command_with_timeout(
+    port_name: String,
+    payload: Vec<u8>,
+    timeout: std::time::Duration,
+) -> Result<Vec<u8>, String> {
+    tokio::task::spawn_blocking(move || send_command_blocking(&port_name, payload, timeout))
         .await
         .map_err(|error| format!("Serial command task join error: {}", error))?
 }
 
-fn send_command_blocking(port_name: &str, payload: Vec<u8>) -> Result<Vec<u8>, String> {
-    send_command_blocking_with_registry(&PORT_REGISTRY, port_name, payload)
+fn send_command_blocking(
+    port_name: &str,
+    payload: Vec<u8>,
+    timeout: std::time::Duration,
+) -> Result<Vec<u8>, String> {
+    send_command_blocking_with_registry_timeout(&PORT_REGISTRY, port_name, payload, timeout)
 }
 
+#[cfg(test)]
 fn send_command_blocking_with_registry(
     registry: &SerialPortRegistry,
     port_name: &str,
     payload: Vec<u8>,
 ) -> Result<Vec<u8>, String> {
+    send_command_blocking_with_registry_timeout(registry, port_name, payload, COMMAND_TIMEOUT)
+}
+
+fn send_command_blocking_with_registry_timeout(
+    registry: &SerialPortRegistry,
+    port_name: &str,
+    payload: Vec<u8>,
+    timeout: std::time::Duration,
+) -> Result<Vec<u8>, String> {
     let handle = registry.handle(port_name)?;
     let mut port = handle
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    port.set_timeout(timeout)
+        .map_err(|error| format!("Failed to set serial command timeout: {error}"))?;
 
     if let Err(error) = write_frame(&mut **port, &payload) {
         drop(port);
@@ -115,14 +139,20 @@ fn send_command_blocking_with_registry(
         return Err(error);
     }
 
-    match read_frame(&mut **port) {
+    let result = match read_frame(&mut **port) {
         Ok(data) => Ok(data),
         Err(error) => {
             drop(port);
             registry.remove(port_name);
-            Err(error)
+            return Err(error);
         }
+    };
+    if let Err(error) = port.set_timeout(COMMAND_TIMEOUT) {
+        drop(port);
+        registry.remove(port_name);
+        return Err(format!("Failed to restore serial command timeout: {error}"));
     }
+    result
 }
 
 pub fn invalidate_port(port_name: &str) {

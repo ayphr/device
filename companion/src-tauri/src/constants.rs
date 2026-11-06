@@ -3,4 +3,5 @@ use std::time::Duration;
 pub const DEVICE_RETENTION_WINDOW: Duration = Duration::from_secs(30);
 pub const SCAN_INTERVAL: Duration = Duration::from_secs(3);
 pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
+pub const OTA_BEGIN_TIMEOUT: Duration = Duration::from_secs(60);
 pub const BLE_OTA_WINDOW: usize = 32;
