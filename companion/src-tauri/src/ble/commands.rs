@@ -1,4 +1,4 @@
-use btleplug::api::{Central, Peripheral as _};
+use btleplug::api::{Central, Peripheral as _, ScanFilter};
 use btleplug::platform::Peripheral;
 use tauri::{AppHandle, State};
 use tokio::time::{sleep, Duration};
@@ -16,8 +16,9 @@ use ayphr_protocol::{
 use super::protocol::parse_uuid;
 use super::scanner::get_primary_adapter;
 use super::state::{
-    emit_devices, get_live_peripheral, refresh_snapshots_with_connection_state, upsert_connection,
-    ActiveBleConnection, BleDeviceStore,
+    connection_lock, emit_devices, get_live_peripheral, refresh_snapshots_with_connection_state,
+    remove_live_peripheral, upsert_connection, upsert_live_peripheral, ActiveBleConnection,
+    BleDeviceStore,
 };
 
 const DISCOVERY_RETRY_ATTEMPTS: usize = 5;
@@ -419,6 +420,9 @@ pub async fn disconnect_ble_device(
     app: AppHandle,
     store: State<'_, BleDeviceStore>,
 ) -> Result<(), String> {
+    let device_lock = connection_lock(&store, &device_id);
+    let _connection_guard = device_lock.lock().await;
+
     let connection = {
         let mut guard = store.connections.lock().unwrap();
         guard.remove(&device_id)
@@ -427,6 +431,7 @@ pub async fn disconnect_ble_device(
     if let Some(active) = connection {
         let _ = active.peripheral.disconnect().await;
     }
+    remove_live_peripheral(&store, &device_id);
 
     refresh_snapshots_with_connection_state(&store);
     emit_devices(&app, &store);
@@ -437,6 +442,9 @@ async fn ensure_connected(
     device_id: String,
     store: &BleDeviceStore,
 ) -> Result<ActiveBleConnection, String> {
+    let device_lock = connection_lock(store, &device_id);
+    let _connection_guard = device_lock.lock().await;
+
     let existing = {
         let guard = store.connections.lock().unwrap();
         guard.get(&device_id).cloned()
@@ -458,35 +466,57 @@ async fn ensure_connected(
         guard.remove(&device_id);
     }
 
-    let peripheral = if let Some(peripheral) = get_live_peripheral(store, &device_id) {
-        peripheral
+    let cached_peripheral = get_live_peripheral(store, &device_id);
+    if let Some(peripheral) = cached_peripheral {
+        match build_connection(device_id.clone(), peripheral, store).await {
+            Ok(connection) => {
+                upsert_connection(store, &device_id, connection.clone());
+                return Ok(connection);
+            }
+            Err(error) => {
+                warn!("[ble] cached peripheral for {device_id} is unusable: {error}");
+                remove_live_peripheral(store, &device_id);
+            }
+        }
     } else {
-        warn!(
-            "[ble] cached peripheral missing for {} , falling back to rediscovery",
-            device_id
-        );
-        discover_peripheral(&device_id).await.ok_or_else(|| {
-            log_string_error(
-                "device lookup failed",
-                "Device is not currently discoverable",
-                "ble",
-            )
-        })?
-    };
+        warn!("[ble] cached peripheral missing for {device_id}, falling back to rediscovery");
+    }
 
-    if !peripheral.is_connected().await.map_err(|error| {
-        log_string_error("checking peripheral connected state failed", error, "ble")
-    })? {
+    let peripheral = discover_peripheral(&device_id).await.ok_or_else(|| {
+        log_string_error(
+            "device lookup failed",
+            "Device is not currently discoverable",
+            "ble",
+        )
+    })?;
+    let connection = build_connection(device_id.clone(), peripheral.clone(), store)
+        .await
+        .map_err(|error| log_string_error("failed to prepare BLE connection", error, "ble"))?;
+    upsert_live_peripheral(store, &device_id, peripheral);
+    upsert_connection(store, &device_id, connection.clone());
+    Ok(connection)
+}
+
+async fn build_connection(
+    device_id: String,
+    peripheral: Peripheral,
+    store: &BleDeviceStore,
+) -> Result<ActiveBleConnection, String> {
+    if !peripheral
+        .is_connected()
+        .await
+        .map_err(|error| format!("checking peripheral connected state failed: {error}"))?
+    {
         peripheral
             .connect()
             .await
-            .map_err(|error| log_string_error("Failed to connect to device", error, "ble"))?;
+            .map_err(|error| format!("failed to connect to device: {error}"))?;
     }
 
     peripheral
         .discover_services()
         .await
-        .map_err(|error| log_string_error("Failed to discover device services", error, "ble"))?;
+        .map_err(|error| format!("failed to discover device services: {error}"))?;
 
     let service_uuid = parse_uuid(FIRMWARE_SERVICE_UUID)
         .map_err(|error| log_string_error("service uuid parse failed", error, "ble"))?;
@@ -532,23 +562,26 @@ async fn ensure_connected(
             )
         })?;
 
-    let initial_setup_complete = {
+    let (initial_setup_complete, initial_authenticated) = {
         let devices = store.devices.lock().unwrap();
         devices
             .iter()
             .find(|d| d.id == device_id)
-            .map(|d| d.setup_complete)
-            .unwrap_or(false)
+            .map(|d| (d.setup_complete, d.authenticated))
+            .unwrap_or((false, false))
     };
 
-    let _ = peripheral.subscribe(&tx_characteristic).await;
+    peripheral
+        .subscribe(&tx_characteristic)
+        .await
+        .map_err(|error| format!("failed to subscribe to device notifications: {error}"))?;
 
     Ok(ActiveBleConnection {
         peripheral,
         rx_characteristic,
         tx_characteristic,
         setup_complete: initial_setup_complete,
-        authenticated: false,
+        authenticated: initial_authenticated,
         command_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
     })
 }
@@ -611,6 +644,12 @@ async fn discover_peripheral(device_id: &str) -> Option<Peripheral> {
                 continue;
             }
         };
+
+        if let Err(error) = adapter.start_scan(ScanFilter::default()).await {
+            tracing::warn!("[ble] scan start attempt {} failed: {}", attempt, error);
+            sleep(DISCOVERY_RETRY_DELAY).await;
+            continue;
+        }
 
         let peripherals = match adapter.peripherals().await {
             Ok(peripherals) => peripherals,

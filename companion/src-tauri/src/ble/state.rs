@@ -12,6 +12,7 @@ pub struct BleDeviceStore {
     pub devices: Arc<Mutex<Vec<BleDeviceSnapshot>>>,
     pub live_peripherals: Arc<Mutex<HashMap<String, Peripheral>>>,
     pub connections: Arc<Mutex<HashMap<String, ActiveBleConnection>>>,
+    pub connection_locks: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
 #[derive(Clone)]
@@ -63,6 +64,24 @@ pub fn upsert_live_peripheral(store: &BleDeviceStore, device_id: &str, periphera
 pub fn get_live_peripheral(store: &BleDeviceStore, device_id: &str) -> Option<Peripheral> {
     let guard = store.live_peripherals.lock().unwrap();
     guard.get(device_id).cloned()
+}
+
+pub fn remove_live_peripheral(store: &BleDeviceStore, device_id: &str) {
+    let mut guard = store.live_peripherals.lock().unwrap();
+    guard.remove(device_id);
+}
+
+pub fn remove_connection(store: &BleDeviceStore, device_id: &str) {
+    let mut guard = store.connections.lock().unwrap();
+    guard.remove(device_id);
+}
+
+pub fn connection_lock(store: &BleDeviceStore, device_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+    let mut guard = store.connection_locks.lock().unwrap();
+    guard
+        .entry(device_id.to_string())
+        .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+        .clone()
 }
 
 pub fn refresh_snapshots_with_connection_state(store: &BleDeviceStore) {
