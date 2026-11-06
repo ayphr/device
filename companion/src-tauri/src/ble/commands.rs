@@ -22,6 +22,8 @@ use super::state::{
 
 const DISCOVERY_RETRY_ATTEMPTS: usize = 5;
 const DISCOVERY_RETRY_DELAY: Duration = Duration::from_millis(600);
+const FIRMWARE_RECONNECT_ATTEMPTS: usize = 10;
+const FIRMWARE_RECONNECT_DELAY: Duration = Duration::from_secs(1);
 
 #[tauri::command]
 pub async fn connect_ble_device(
@@ -351,7 +353,7 @@ pub async fn update_firmware_ble(
         .await
         .map_err(|error| log_string_error("firmware update connect failed", error, "ble"))?;
     let transport = Transport::Ble(connection);
-    commands::do_update_firmware(
+    let result = commands::do_update_firmware(
         &transport,
         firmware_data,
         signature,
@@ -359,7 +361,13 @@ pub async fn update_firmware_ble(
         BLE_CHUNK_SIZE,
         "ble",
     )
-    .await
+    .await;
+
+    if result.is_ok() {
+        reconnect_after_firmware_update(&device_id, &app, &store).await;
+    }
+
+    result
 }
 
 #[tauri::command]
@@ -375,7 +383,7 @@ pub async fn download_and_update_firmware_ble(
         .await
         .map_err(|error| log_string_error("firmware update connect failed", error, "ble"))?;
     let transport = Transport::Ble(connection);
-    commands::do_download_and_update_firmware(
+    let result = commands::do_download_and_update_firmware(
         &transport,
         &download_url,
         &expected_sha256,
@@ -384,7 +392,13 @@ pub async fn download_and_update_firmware_ble(
         BLE_CHUNK_SIZE,
         "ble",
     )
-    .await
+    .await;
+
+    if result.is_ok() {
+        reconnect_after_firmware_update(&device_id, &app, &store).await;
+    }
+
+    result
 }
 
 #[tauri::command]
@@ -537,6 +551,54 @@ async fn ensure_connected(
         authenticated: false,
         command_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
     })
+}
+
+async fn reconnect_after_firmware_update(device_id: &str, app: &AppHandle, store: &BleDeviceStore) {
+    {
+        let mut guard = store.connections.lock().unwrap();
+        guard.remove(device_id);
+    }
+    refresh_snapshots_with_connection_state(store);
+    emit_devices(app, store);
+
+    for attempt in 1..=FIRMWARE_RECONNECT_ATTEMPTS {
+        if attempt > 1 {
+            sleep(FIRMWARE_RECONNECT_DELAY).await;
+        }
+
+        let connection = match ensure_connected(device_id.to_string(), store).await {
+            Ok(connection) => connection,
+            Err(error) => {
+                tracing::debug!(
+                    "[ble] firmware reconnect attempt {attempt}/{FIRMWARE_RECONNECT_ATTEMPTS} failed: {error}"
+                );
+                continue;
+            }
+        };
+
+        let status = match Transport::Ble(connection.clone()).query_status().await {
+            Ok(status) => status,
+            Err(error) => {
+                tracing::debug!(
+                    "[ble] firmware reconnect status attempt {attempt}/{FIRMWARE_RECONNECT_ATTEMPTS} failed: {error}"
+                );
+                continue;
+            }
+        };
+
+        let mut connection = connection;
+        connection.setup_complete = status.setup_complete;
+        connection.authenticated = status.authenticated;
+        upsert_connection(store, device_id, connection);
+        refresh_snapshots_with_connection_state(store);
+        emit_devices(app, store);
+        tracing::info!("[ble] reconnected after firmware update on attempt {attempt}");
+        return;
+    }
+
+    tracing::warn!(
+        "[ble] device did not reconnect after firmware update after {FIRMWARE_RECONNECT_ATTEMPTS} attempts"
+    );
 }
 
 async fn discover_peripheral(device_id: &str) -> Option<Peripheral> {
