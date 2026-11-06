@@ -1,8 +1,9 @@
 use ayphr_protocol::{
-    unpack, SensorPacket, RESPONSE_FIRMWARE_INFO, RESPONSE_LIVE_DATA, RESPONSE_STATUS,
+    unpack, SensorPacket, RESPONSE_CLOUD_LINK, RESPONSE_DEVICE_SETTINGS, RESPONSE_FIRMWARE_INFO,
+    RESPONSE_LIVE_DATA, RESPONSE_STATUS,
 };
 
-use crate::types::{ParsedFirmwareInfo, ParsedStatus};
+use crate::types::{CloudLinkResult, DeviceSettingsResult, ParsedFirmwareInfo, ParsedStatus};
 
 pub fn parse_status_response(payload: &[u8]) -> Result<ParsedStatus, String> {
     if payload.len() < 7 || payload[0] != RESPONSE_STATUS {
@@ -98,6 +99,65 @@ pub fn parse_live_data_response(payload: &[u8]) -> Result<Option<SensorPacket>, 
     }
 
     Ok(Some(decoded.packet))
+}
+
+pub fn parse_device_settings_response(payload: &[u8]) -> Result<DeviceSettingsResult, String> {
+    if payload.len() < 10 || payload[0] != RESPONSE_DEVICE_SETTINGS {
+        return Err("Invalid device settings response payload".to_string());
+    }
+
+    let sampling_interval_secs =
+        u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
+    let upload_interval_secs = u32::from_le_bytes([payload[5], payload[6], payload[7], payload[8]]);
+    let cloud_linked = payload[9] == 1;
+
+    Ok(DeviceSettingsResult {
+        sampling_interval_secs,
+        upload_interval_secs,
+        cloud_linked,
+    })
+}
+
+pub fn parse_cloud_link_response(payload: &[u8]) -> Result<CloudLinkResult, String> {
+    if payload.len() < 2 || payload[0] != RESPONSE_CLOUD_LINK {
+        return Err("Invalid cloud link response payload".to_string());
+    }
+
+    let state_byte = payload[1];
+    let state = match state_byte {
+        ayphr_protocol::CLOUD_STATE_UNLINKED => "unlinked",
+        ayphr_protocol::CLOUD_STATE_REQUESTING => "requesting",
+        ayphr_protocol::CLOUD_STATE_PENDING => "pending",
+        ayphr_protocol::CLOUD_STATE_LINKED => "linked",
+        ayphr_protocol::CLOUD_STATE_ERROR => "error",
+        _ => return Err("Unknown cloud link state".to_string()),
+    }
+    .to_string();
+
+    let mut cursor = 2;
+    let code = read_string_field(payload, &mut cursor).ok();
+    let code = code.filter(|value| !value.is_empty());
+
+    if cursor + 4 > payload.len() {
+        return Err("Cloud link response truncated before expiry".to_string());
+    }
+    let expires_in_secs = u32::from_le_bytes([
+        payload[cursor],
+        payload[cursor + 1],
+        payload[cursor + 2],
+        payload[cursor + 3],
+    ]);
+    cursor += 4;
+
+    let message = read_string_field(payload, &mut cursor).ok();
+    let message = message.filter(|value| !value.is_empty());
+
+    Ok(CloudLinkResult {
+        state,
+        code,
+        expires_in_secs,
+        message,
+    })
 }
 
 fn read_string_field(payload: &[u8], cursor: &mut usize) -> Result<String, String> {

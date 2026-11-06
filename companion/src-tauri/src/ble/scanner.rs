@@ -51,11 +51,12 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
                 .manufacturer_data
                 .contains_key(&FIRMWARE_MANUFACTURER_ID);
 
-            // Require the Ayphr manufacturer marker. The 128-bit service UUID is
-            // also advertised, but some platforms (notably macOS CoreBluetooth)
-            // do not surface it in the advertisement payload, so requiring it
-            // here would hide otherwise valid devices.
-            if !has_firmware_manufacturer_marker {
+            // Either marker identifies an Ayphr device. Platform BLE APIs can
+            // omit one advertisement field, so requiring both hides devices.
+            let has_firmware_service_uuid = advertised_service_uuids
+                .iter()
+                .any(|uuid| uuid.eq_ignore_ascii_case(ayphr_protocol::FIRMWARE_SERVICE_UUID));
+            if !has_firmware_manufacturer_marker && !has_firmware_service_uuid {
                 continue;
             }
 
@@ -77,14 +78,27 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
                 .map(|flag| flag == 1)
                 .unwrap_or(false);
 
-            let (is_connected, is_authenticated, known_setup_complete) = {
+            let existing_connection = {
                 let guard = store.connections.lock().unwrap();
-                if let Some(connection) = guard.get(&peripheral_id) {
-                    (true, connection.authenticated, connection.setup_complete)
-                } else {
-                    (false, false, setup_complete)
-                }
+                guard.get(&peripheral_id).cloned()
             };
+            let (is_connected, is_authenticated, known_setup_complete, auth_required) =
+                if let Some(connection) = existing_connection {
+                    match connection.peripheral.is_connected().await {
+                        Ok(true) => (
+                            true,
+                            connection.authenticated,
+                            connection.setup_complete,
+                            connection.auth_required,
+                        ),
+                        Ok(false) | Err(_) => {
+                            super::state::remove_connection(&store, &peripheral_id);
+                            (false, false, setup_complete, false)
+                        }
+                    }
+                } else {
+                    (false, false, setup_complete, false)
+                };
 
             let effective_setup_complete = setup_complete || known_setup_complete;
             let authenticated = if effective_setup_complete {
@@ -107,6 +121,7 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
                 model_id,
                 transport: "ble".to_string(),
                 setup_complete: effective_setup_complete,
+                auth_required,
                 rssi,
                 signal_strength,
                 connected,

@@ -36,3 +36,18 @@ export interface FirmwareReleaseMetadata {
   signature?: string;
   body?: string;
 }
+
+export interface DeviceSettingsResult {
+  samplingIntervalSecs: number;
+  uploadIntervalSecs: number;
+  cloudLinked: boolean;
+}
+
+export type CloudLinkState = 'unlinked' | 'requesting' | 'pending' | 'linked' | 'error';
+
+export interface CloudLinkResult {
+  state: CloudLinkState;
+  code: string | null;
+  expiresInSecs: number;
+  message: string | null;
+}

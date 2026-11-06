@@ -132,6 +132,8 @@ pub async fn submit_serial_setup(
     device_password: String,
     auth_required: bool,
     skip_wifi: bool,
+    sampling_interval_secs: u32,
+    upload_interval_secs: u32,
     app: AppHandle,
     store: State<'_, SerialDeviceStore>,
 ) -> Result<BleConnectionState, String> {
@@ -144,6 +146,8 @@ pub async fn submit_serial_setup(
         &device_password,
         auth_required,
         skip_wifi,
+        sampling_interval_secs,
+        upload_interval_secs,
     )
     .await?;
 
@@ -234,6 +238,47 @@ pub async fn get_live_data_serial(
 ) -> Result<Option<LiveDataResult>, String> {
     let transport = Transport::Serial(device_id);
     commands::do_get_live_data(&transport).await
+}
+
+#[tauri::command]
+pub async fn get_device_settings_serial(
+    device_id: String,
+) -> Result<crate::types::DeviceSettingsResult, String> {
+    let transport = Transport::Serial(device_id);
+    commands::do_get_device_settings(&transport).await
+}
+
+#[tauri::command]
+pub async fn update_device_settings_serial(
+    device_id: String,
+    sampling_interval_secs: u32,
+    upload_interval_secs: u32,
+) -> Result<crate::types::DeviceSettingsResult, String> {
+    let transport = Transport::Serial(device_id);
+    commands::do_update_device_settings(&transport, sampling_interval_secs, upload_interval_secs)
+        .await
+}
+
+#[tauri::command]
+pub async fn start_cloud_link_serial(
+    device_id: String,
+) -> Result<crate::types::CloudLinkResult, String> {
+    let transport = Transport::Serial(device_id);
+    commands::do_start_cloud_link(&transport).await
+}
+
+#[tauri::command]
+pub async fn get_cloud_link_status_serial(
+    device_id: String,
+) -> Result<crate::types::CloudLinkResult, String> {
+    let transport = Transport::Serial(device_id);
+    commands::do_cloud_link_status(&transport).await
+}
+
+#[tauri::command]
+pub async fn unlink_cloud_serial(device_id: String) -> Result<(), String> {
+    let transport = Transport::Serial(device_id);
+    commands::do_unlink_cloud(&transport).await
 }
 
 #[tauri::command]

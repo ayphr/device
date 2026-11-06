@@ -9,10 +9,12 @@ use ayphr_protocol::{
 };
 use tauri::{AppHandle, Emitter};
 
+use crate::constants::OTA_BEGIN_TIMEOUT;
 use crate::protocol::{format_bytes, log_string_error};
 use crate::transport::Transport;
 use crate::types::{
-    BleConnectionState, FirmwareInfoResult, FirmwareUpdateProgress, LiveDataResult, ParsedStatus,
+    BleConnectionState, CloudLinkResult, DeviceSettingsResult, FirmwareInfoResult,
+    FirmwareUpdateProgress, LiveDataResult, ParsedStatus,
 };
 
 pub fn build_connection_state(status: &ParsedStatus) -> BleConnectionState {
@@ -34,6 +36,8 @@ pub async fn do_submit_setup(
     device_password: &str,
     auth_required: bool,
     skip_wifi: bool,
+    sampling_interval_secs: u32,
+    upload_interval_secs: u32,
 ) -> Result<BleConnectionState, String> {
     let mut command = vec![COMMAND_APPLY_SETUP];
     append_field(&mut command, device_name)
@@ -46,6 +50,8 @@ pub async fn do_submit_setup(
         .map_err(|e| log_string_error("setup device password encoding failed", e, "shared"))?;
     command.push(if auth_required { 1 } else { 0 });
     command.push(if skip_wifi { 1 } else { 0 });
+    command.extend_from_slice(&sampling_interval_secs.to_le_bytes());
+    command.extend_from_slice(&upload_interval_secs.to_le_bytes());
 
     tracing::debug!("[shared] setup command bytes={}", format_bytes(&command));
 
@@ -186,6 +192,67 @@ pub async fn do_rename_device(transport: &Transport, name: &str) -> Result<(), S
     Ok(())
 }
 
+pub async fn do_get_device_settings(transport: &Transport) -> Result<DeviceSettingsResult, String> {
+    let settings = transport
+        .query_device_settings()
+        .await
+        .map_err(|e| log_string_error("device settings query failed", e, "shared"))?;
+    Ok(DeviceSettingsResult {
+        sampling_interval_secs: settings.sampling_interval_secs,
+        upload_interval_secs: settings.upload_interval_secs,
+        cloud_linked: settings.cloud_linked,
+    })
+}
+
+pub async fn do_update_device_settings(
+    transport: &Transport,
+    sampling_interval_secs: u32,
+    upload_interval_secs: u32,
+) -> Result<DeviceSettingsResult, String> {
+    let settings = transport
+        .update_device_settings(sampling_interval_secs, upload_interval_secs)
+        .await
+        .map_err(|e| log_string_error("device settings update failed", e, "shared"))?;
+    Ok(DeviceSettingsResult {
+        sampling_interval_secs: settings.sampling_interval_secs,
+        upload_interval_secs: settings.upload_interval_secs,
+        cloud_linked: settings.cloud_linked,
+    })
+}
+
+pub async fn do_start_cloud_link(transport: &Transport) -> Result<CloudLinkResult, String> {
+    let result = transport
+        .start_cloud_link()
+        .await
+        .map_err(|e| log_string_error("cloud link start failed", e, "shared"))?;
+    Ok(CloudLinkResult {
+        state: result.state,
+        code: result.code,
+        expires_in_secs: result.expires_in_secs,
+        message: result.message,
+    })
+}
+
+pub async fn do_cloud_link_status(transport: &Transport) -> Result<CloudLinkResult, String> {
+    let result = transport
+        .query_cloud_link()
+        .await
+        .map_err(|e| log_string_error("cloud link status failed", e, "shared"))?;
+    Ok(CloudLinkResult {
+        state: result.state,
+        code: result.code,
+        expires_in_secs: result.expires_in_secs,
+        message: result.message,
+    })
+}
+
+pub async fn do_unlink_cloud(transport: &Transport) -> Result<(), String> {
+    transport
+        .unlink_cloud()
+        .await
+        .map_err(|e| log_string_error("cloud unlink failed", e, "shared"))
+}
+
 pub async fn do_get_firmware_info(transport: &Transport) -> Result<FirmwareInfoResult, String> {
     let info = transport
         .query_firmware_info()
@@ -319,7 +386,7 @@ impl<'a> OtaWriter<'a> {
         begin_cmd.extend_from_slice(signature);
         let response = self
             .transport
-            .send_command(begin_cmd)
+            .send_command_with_timeout(begin_cmd, OTA_BEGIN_TIMEOUT)
             .await
             .map_err(|e| log_string_error("OTA begin failed", e, self.label))?;
         if response.first().copied() != Some(RESPONSE_OTA_BEGIN_OK) {

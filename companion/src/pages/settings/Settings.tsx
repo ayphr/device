@@ -259,20 +259,20 @@ export default function SettingsPage({ settings, onSettingsChange, onCheckForUpd
                 >
                   {isCheckingForUpdate ? 'Checking…' : 'Check for updates'}
                 </Button>
-                {updateCheckFeedback ? (
-                  <p
-                    className={`${styles['settings-page__update-feedback']} ${
-                      updateCheckFeedback.type === 'error'
-                        ? styles['settings-page__update-feedback--error']
-                        : ''
-                    }`.trim()}
-                    role={updateCheckFeedback.type === 'error' ? 'alert' : 'status'}
-                  >
-                    {updateCheckFeedback.message}
-                  </p>
-                ) : null}
               </div>
             </div>
+            {updateCheckFeedback ? (
+              <p
+                className={`${styles['settings-page__update-feedback']} ${
+                  updateCheckFeedback.type === 'error'
+                    ? styles['settings-page__update-feedback--error']
+                    : ''
+                }`.trim()}
+                role={updateCheckFeedback.type === 'error' ? 'alert' : 'status'}
+              >
+                {updateCheckFeedback.message}
+              </p>
+            ) : null}
           </div>
         )}
 

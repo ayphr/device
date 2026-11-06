@@ -69,7 +69,15 @@ pub async fn send_command(
     connection: &ActiveBleConnection,
     payload: Vec<u8>,
 ) -> Result<Vec<u8>, String> {
-    let mut responses = send_commands(connection, vec![payload]).await?;
+    send_command_with_timeout(connection, payload, COMMAND_TIMEOUT).await
+}
+
+pub async fn send_command_with_timeout(
+    connection: &ActiveBleConnection,
+    payload: Vec<u8>,
+    timeout: std::time::Duration,
+) -> Result<Vec<u8>, String> {
+    let mut responses = send_commands_with_timeout(connection, vec![payload], timeout).await?;
     responses
         .pop()
         .ok_or_else(|| "Device produced no response".to_string())
@@ -78,6 +86,14 @@ pub async fn send_command(
 pub async fn send_commands(
     connection: &ActiveBleConnection,
     payloads: Vec<Vec<u8>>,
+) -> Result<Vec<Vec<u8>>, String> {
+    send_commands_with_timeout(connection, payloads, COMMAND_TIMEOUT).await
+}
+
+pub async fn send_commands_with_timeout(
+    connection: &ActiveBleConnection,
+    payloads: Vec<Vec<u8>>,
+    timeout: std::time::Duration,
 ) -> Result<Vec<Vec<u8>>, String> {
     let _guard = connection.command_lock.lock().await;
 
@@ -110,7 +126,7 @@ pub async fn send_commands(
         write_payload(connection, payload).await?;
     }
 
-    tokio::time::timeout(COMMAND_TIMEOUT, async {
+    tokio::time::timeout(timeout, async {
         // Accumulate notification bytes across the whole batch so that frames
         // which arrive coalesced in a single notification (or split across
         // several) are reassembled without losing trailing bytes.

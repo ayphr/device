@@ -1,9 +1,20 @@
 import { useState } from 'react';
-import { IconArrowLeft, IconCheck, IconDeviceDesktop, IconShieldCheck, IconWifi } from '@tabler/icons-react';
-import { Button, Card, CardBody, CardFooter, CardHeader, Input, Toggle } from '../../components/common';
+import { IconActivity, IconArrowLeft, IconCheck, IconCloud, IconDeviceDesktop, IconShieldCheck, IconWifi } from '@tabler/icons-react';
+import { Button, Card, CardBody, CardFooter, CardHeader, Input, Modal, Toggle } from '../../components/common';
 import { type DeviceInfo } from '../../lib/devices';
 import { type DeviceConnectionState } from '../../types';
 import { invoke } from '@tauri-apps/api/core';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { useCloudLink } from '../../lib/useCloudLink';
+import {
+  DEFAULT_SAMPLING_INTERVAL_SECS,
+  DEFAULT_UPLOAD_INTERVAL_SECS,
+  MAX_SAMPLING_INTERVAL_SECS,
+  MAX_UPLOAD_INTERVAL_SECS,
+  MIN_SAMPLING_INTERVAL_SECS,
+  MIN_UPLOAD_INTERVAL_SECS,
+  validateIntervals,
+} from '../../lib/sync';
 import styles from './Setup.module.css';
 
 interface SetupPageProps {
@@ -12,16 +23,18 @@ interface SetupPageProps {
   readonly onComplete: (device: DeviceInfo) => void;
 }
 
-type SetupStep = 'name' | 'wifi' | 'password' | 'terms' | 'review';
+type SetupStep = 'name' | 'wifi' | 'sync' | 'password' | 'cloud' | 'terms' | 'review';
 type SetupStepWithIntro = 'intro' | SetupStep;
 
-const stepOrder: SetupStepWithIntro[] = ['intro', 'name', 'wifi', 'password', 'terms', 'review'];
+const stepOrder: SetupStepWithIntro[] = ['intro', 'name', 'wifi', 'sync', 'password', 'cloud', 'terms', 'review'];
 
 const stepTitles: Record<SetupStepWithIntro, string> = {
   intro: 'Set it up',
   name: 'Device name',
   wifi: 'Wi-Fi',
+  sync: 'Sync schedule',
   password: 'Device password',
+  cloud: 'Ayphr Cloud',
   terms: 'Terms',
   review: 'Review',
 };
@@ -30,7 +43,9 @@ const stepIcons: Record<SetupStepWithIntro, typeof IconDeviceDesktop> = {
   intro: IconDeviceDesktop,
   name: IconDeviceDesktop,
   wifi: IconWifi,
+  sync: IconActivity,
   password: IconShieldCheck,
+  cloud: IconCloud,
   terms: IconCheck,
   review: IconCheck,
 };
@@ -44,8 +59,15 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
   const [skipWifiSetup, setSkipWifiSetup] = useState(false);
   const [disableAuthentication, setDisableAuthentication] = useState(false);
   const [agreedToTos, setAgreedToTos] = useState(false);
+  const [samplingInterval, setSamplingInterval] = useState(DEFAULT_SAMPLING_INTERVAL_SECS);
+  const [uploadInterval, setUploadInterval] = useState(DEFAULT_UPLOAD_INTERVAL_SECS);
+  const [linkCloud, setLinkCloud] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingDevice, setPendingDevice] = useState<DeviceInfo | null>(null);
+  const [isCloudLinking, setIsCloudLinking] = useState(false);
+
+  const cloudLink = useCloudLink(device.id, device.transport);
 
   const currentStepIndex = stepOrder.indexOf(step);
   const isFirstStep = step === 'intro';
@@ -56,11 +78,14 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
   } else if (devicePassword.length > 0) {
     passwordSummary = 'Set';
   }
+  const intervalsError = validateIntervals(samplingInterval, uploadInterval);
   const canContinue =
     step === 'intro' ||
     (step === 'name' && deviceName.trim().length > 0) ||
     (step === 'wifi' && (skipWifiSetup || wifiSsid.trim().length > 0)) ||
+    (step === 'sync' && intervalsError === null) ||
     (step === 'password' && (disableAuthentication || devicePassword.trim().length >= 8)) ||
+    step === 'cloud' ||
     (step === 'terms' && agreedToTos) ||
     step === 'review';
 
@@ -99,16 +124,26 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
         devicePassword,
         authRequired: !disableAuthentication,
         skipWifi: skipWifiSetup,
+        samplingIntervalSecs: samplingInterval,
+        uploadIntervalSecs: uploadInterval,
       });
 
-      onComplete({
+      const updatedDevice = {
         ...device,
         name: connection.deviceName || deviceName.trim() || device.name,
         setupComplete: connection.setupComplete,
         connected: connection.connected,
         authenticated: connection.authenticated,
         authRequired: connection.authRequired,
-      });
+      };
+
+      if (linkCloud) {
+        setPendingDevice(updatedDevice);
+        setIsCloudLinking(true);
+        await cloudLink.start();
+      } else {
+        onComplete(updatedDevice);
+      }
     } catch (invokeError) {
       console.debug('Setup submission failed', invokeError);
       setSubmitError(typeof invokeError === 'string' ? invokeError : String(invokeError));
@@ -137,7 +172,7 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
             <CardBody>
               <div className={styles['setup-page__intro-grid']}>
                 <div>
-                  <strong>5 steps</strong>
+                  <strong>{stepCount} steps</strong>
                   <span>Quick local setup</span>
                 </div>
                 <div>
@@ -204,6 +239,37 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
           </div>
         );
 
+      case 'sync':
+        return (
+          <div className={styles['setup-page__section']}>
+            <h2>Configure sync schedule</h2>
+            <p>These intervals control how often the device samples sensors and uploads telemetry to Ayphr Cloud.</p>
+            <div className={styles['setup-page__form-grid']}>
+              <Input
+                label="Sampling interval (seconds)"
+                type="number"
+                value={String(samplingInterval)}
+                onChange={(event) => setSamplingInterval(Number(event.target.value))}
+                helperText={`Between ${MIN_SAMPLING_INTERVAL_SECS} and ${MAX_SAMPLING_INTERVAL_SECS} seconds`}
+                fullWidth={true}
+              />
+              <Input
+                label="Upload interval (seconds)"
+                type="number"
+                value={String(uploadInterval)}
+                onChange={(event) => setUploadInterval(Number(event.target.value))}
+                helperText={`Between ${MIN_UPLOAD_INTERVAL_SECS} and ${MAX_UPLOAD_INTERVAL_SECS} seconds; must be at least the sampling interval`}
+                fullWidth={true}
+              />
+            </div>
+            {intervalsError && (
+              <p role="alert" style={{ color: 'var(--color-error)', marginTop: '0.5rem' }}>
+                {intervalsError}
+              </p>
+            )}
+          </div>
+        );
+
       case 'password':
         return (
           <div className={styles['setup-page__section']}>
@@ -236,14 +302,53 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
           </div>
         );
 
+      case 'cloud':
+        return (
+          <div className={styles['setup-page__section']}>
+            <h2>Link to Ayphr Cloud (optional)</h2>
+            <p>
+              You can link this device to Ayphr Cloud now or later from the device page. Linking uploads
+              telemetry so you can view it in the web app.
+            </p>
+            <div style={{ margin: '1rem 0', padding: '0.9rem 1rem', border: '1px solid var(--color-border-subtle)', borderRadius: '0.9rem', background: 'var(--color-surface-muted)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                <div>
+                  <strong>Link to Ayphr Cloud</strong>
+                  <p style={{ margin: '0.25rem 0 0', color: 'var(--color-text-secondary)' }}>
+                    Generate a pairing code after setup. You will need to enter it on the Ayphr website.
+                  </p>
+                </div>
+                <Toggle color='green' checked={linkCloud} onChange={() => setLinkCloud((current) => !current)} />
+              </div>
+            </div>
+          </div>
+        );
+
       case 'terms':
         return (
           <div className={styles['setup-page__section']}>
             <h2>Agree to the terms</h2>
-            <p>Review the terms of service before continuing to the final overview.</p>
+            <p>Review the terms of service and privacy policy before continuing to the final overview.</p>
+            <p style={{ margin: '0 0 1rem' }}>
+              <button
+                type="button"
+                style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                onClick={() => void openUrl('https://ayphr.com/policies/terms')}
+              >
+                Terms of Service
+              </button>
+              {' · '}
+              <button
+                type="button"
+                style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                onClick={() => void openUrl('https://ayphr.com/policies/privacy')}
+              >
+                Privacy Policy
+              </button>
+            </p>
             <div className={`${styles['setup-page__tos-card']} ${agreedToTos ? styles['setup-page__tos-card--active'] : ''}`.trim()}>
               <div>
-                <strong>I agree to the terms of service</strong>
+                <strong>I agree to the Terms of Service and Privacy Policy</strong>
                 <span>Required to proceed with setup.</span>
               </div>
               <Toggle color='green' checked={agreedToTos} onChange={() => setAgreedToTos((current) => !current)} />
@@ -268,6 +373,18 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
               <div>
                 <dt>Device password</dt>
                 <dd>{passwordSummary}</dd>
+              </div>
+              <div>
+                <dt>Sampling interval</dt>
+                <dd>{samplingInterval} seconds</dd>
+              </div>
+              <div>
+                <dt>Upload interval</dt>
+                <dd>{uploadInterval} seconds</dd>
+              </div>
+              <div>
+                <dt>Ayphr Cloud</dt>
+                <dd>{linkCloud ? 'Link after setup' : 'Not linked'}</dd>
               </div>
               <div>
                 <dt>Terms</dt>
@@ -343,7 +460,7 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
           <CardBody>
             <div className={styles['setup-page__intro-grid']}>
               <div>
-                <strong>5 steps</strong>
+                <strong>{stepCount} steps</strong>
                 <span>Quick local setup</span>
               </div>
               <div>
@@ -398,6 +515,56 @@ export default function SetupPage({ device, onBack, onComplete }: Readonly<Setup
             </p>
           ) : null}
         </Card>
+      )}
+      {isCloudLinking && pendingDevice && (
+        <Modal
+          isOpen={true}
+          title="Link to Ayphr Cloud"
+          onClose={() => {
+            setIsCloudLinking(false);
+            onComplete(pendingDevice);
+          }}
+          confirmText="Done"
+          onConfirm={() => {
+            setIsCloudLinking(false);
+            onComplete(pendingDevice);
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {cloudLink.status?.state === 'pending' && cloudLink.status.code ? (
+              <>
+                <p>Enter this code on the Ayphr website to link your device:</p>
+                <div style={{ textAlign: 'center', fontSize: '2rem', fontFamily: 'monospace', letterSpacing: '0.25rem' }}>
+                  {cloudLink.status.code}
+                </div>
+                <p>Expires in {cloudLink.status.expiresInSecs} seconds.</p>
+                <Button variant="secondary" onClick={() => void openUrl('https://ayphr.com/devices')}>
+                  Open ayphr.com/devices
+                </Button>
+              </>
+            ) : cloudLink.status?.state === 'linked' ? (
+              <p>Your device has been linked to Ayphr Cloud.</p>
+            ) : cloudLink.status?.state === 'error' ? (
+              <p style={{ color: 'var(--color-error)' }}>
+                {cloudLink.status.message ?? cloudLink.error ?? 'Cloud linking failed'}
+              </p>
+            ) : (
+              <p>Preparing a pairing code...</p>
+            )}
+            {cloudLink.error && cloudLink.status?.state !== 'error' && (
+              <p style={{ color: 'var(--color-error)' }}>{cloudLink.error}</p>
+            )}
+            <Button
+              variant="secondary"
+              onClick={() => {
+                void cloudLink.start();
+              }}
+              disabled={cloudLink.status?.state === 'pending' || cloudLink.isStarting}
+            >
+              {cloudLink.status?.state === 'pending' ? 'Waiting for link...' : 'Generate new code'}
+            </Button>
+          </div>
+        </Modal>
       )}
     </section>
   );

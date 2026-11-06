@@ -5,10 +5,11 @@ use std::time::Duration;
 
 use crate::command_processor;
 use crate::config::DeviceSetup;
+use std::sync::Arc;
 
 const MAX_PAYLOAD_LEN: usize = 8192;
 
-pub fn run_loop(uart: &UartDriver<'_>, setup: &DeviceSetup) {
+pub fn run_loop(uart: &UartDriver<'_>, setup: Arc<DeviceSetup>) {
     loop {
         let mut length_buf = [0u8; 2];
         if let Err(error) = read_exact(uart, &mut length_buf) {
@@ -40,7 +41,7 @@ pub fn run_loop(uart: &UartDriver<'_>, setup: &DeviceSetup) {
         }
 
         info!("Received serial request bytes={}", payload.len());
-        let response = command_processor::process_serial_request(setup, &payload);
+        let response = command_processor::process_serial_request(&setup, &payload);
 
         if let Err(error) = write_frame(uart, &response) {
             warn!("Failed to write serial response: {:?}", error);

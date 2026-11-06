@@ -1,8 +1,20 @@
 use esp_idf_svc::wifi::{BlockingWifi, Configuration, EspWifi};
 use log::{error, info, warn};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static CONNECTED: AtomicBool = AtomicBool::new(false);
+
+pub fn is_connected() -> bool {
+    CONNECTED.load(Ordering::SeqCst)
+}
+
+fn set_connected(connected: bool) {
+    CONNECTED.store(connected, Ordering::SeqCst);
+}
 
 pub fn connect(wifi: &mut BlockingWifi<EspWifi<'_>>, ssid: &str, password: &str) {
     if ssid.is_empty() {
+        set_connected(false);
         warn!("No WiFi credentials configured; skipping WiFi connection");
         return;
     }
@@ -22,6 +34,7 @@ pub fn connect(wifi: &mut BlockingWifi<EspWifi<'_>>, ssid: &str, password: &str)
 /// e.g. when the user updates the WiFi settings at runtime.
 pub fn reconnect(wifi: &mut BlockingWifi<EspWifi<'_>>, ssid: &str, password: &str) {
     if ssid.is_empty() {
+        set_connected(false);
         warn!("No WiFi credentials configured; skipping WiFi reconnection");
         return;
     }
@@ -46,6 +59,8 @@ pub fn reconnect(wifi: &mut BlockingWifi<EspWifi<'_>>, ssid: &str, password: &st
 }
 
 fn apply_config_and_connect(wifi: &mut BlockingWifi<EspWifi<'_>>, ssid: &str, password: &str) {
+    set_connected(false);
+
     let ssid_heapless: heapless::String<32> = match ssid.try_into() {
         Ok(s) => s,
         Err(_) => {
@@ -83,5 +98,6 @@ fn apply_config_and_connect(wifi: &mut BlockingWifi<EspWifi<'_>>, ssid: &str, pa
         return;
     }
 
+    set_connected(true);
     info!("WiFi connected successfully");
 }
