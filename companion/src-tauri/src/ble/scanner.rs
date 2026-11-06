@@ -78,14 +78,22 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
                 .map(|flag| flag == 1)
                 .unwrap_or(false);
 
-            let (is_connected, is_authenticated, known_setup_complete) = {
+            let existing_connection = {
                 let guard = store.connections.lock().unwrap();
-                if let Some(connection) = guard.get(&peripheral_id) {
-                    (true, connection.authenticated, connection.setup_complete)
+                guard.get(&peripheral_id).cloned()
+            };
+            let (is_connected, is_authenticated, known_setup_complete) =
+                if let Some(connection) = existing_connection {
+                    match connection.peripheral.is_connected().await {
+                        Ok(true) => (true, connection.authenticated, connection.setup_complete),
+                        Ok(false) | Err(_) => {
+                            super::state::remove_connection(&store, &peripheral_id);
+                            (false, false, setup_complete)
+                        }
+                    }
                 } else {
                     (false, false, setup_complete)
-                }
-            };
+                };
 
             let effective_setup_complete = setup_complete || known_setup_complete;
             let authenticated = if effective_setup_complete {
