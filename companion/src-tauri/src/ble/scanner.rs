@@ -51,11 +51,12 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
                 .manufacturer_data
                 .contains_key(&FIRMWARE_MANUFACTURER_ID);
 
-            // Require the Ayphr manufacturer marker. The 128-bit service UUID is
-            // also advertised, but some platforms (notably macOS CoreBluetooth)
-            // do not surface it in the advertisement payload, so requiring it
-            // here would hide otherwise valid devices.
-            if !has_firmware_manufacturer_marker {
+            // Either marker identifies an Ayphr device. Platform BLE APIs can
+            // omit one advertisement field, so requiring both hides devices.
+            let has_firmware_service_uuid = advertised_service_uuids
+                .iter()
+                .any(|uuid| uuid.eq_ignore_ascii_case(ayphr_protocol::FIRMWARE_SERVICE_UUID));
+            if !has_firmware_manufacturer_marker && !has_firmware_service_uuid {
                 continue;
             }
 

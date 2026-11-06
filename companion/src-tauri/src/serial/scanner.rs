@@ -20,11 +20,6 @@ const NON_DEVICE_PORT_PATTERNS: &[&str] = &[
     "Model",
 ];
 
-/// USB vendor IDs of the UART bridges found on supported Geo hardware and
-/// common dev boards: WCH CH34x, Silicon Labs CP210x, FTDI, Espressif native
-/// USB, Arduino and Raspberry Pi RP2040.
-const ALLOWED_USB_VENDOR_IDS: &[u16] = &[0x1A86, 0x10C4, 0x0403, 0x303A, 0x2341, 0x2E8A];
-
 /// How long a port that failed a probe is left alone before retrying, so
 /// unrelated serial devices are not re-opened on every scan tick.
 const PROBE_BACKOFF: Duration = Duration::from_secs(30);
@@ -37,15 +32,16 @@ fn is_likely_non_device_port(port_name: &str) -> bool {
 }
 
 /// Whether a port is safe to probe with a Geo status request on first sight.
-/// Non-USB ports and USB devices from unknown vendors are never probed; a
-/// port that has already answered a Geo probe stays eligible afterwards.
+/// A successful response is required before showing a device, so every
+/// non-excluded serial port can be safely checked regardless of its USB vendor.
 fn is_probe_candidate(port: &SerialPortInfo) -> bool {
     if is_likely_non_device_port(&port.port_name) {
         return false;
     }
 
     match &port.port_type {
-        SerialPortType::UsbPort(usb) => ALLOWED_USB_VENDOR_IDS.contains(&usb.vid),
+        SerialPortType::UsbPort(_) => true,
+        SerialPortType::Unknown => true,
         _ => false,
     }
 }
@@ -173,18 +169,8 @@ mod tests {
     }
 
     #[test]
-    fn allowlisted_usb_vids_are_candidates() {
-        for vid in ALLOWED_USB_VENDOR_IDS {
-            assert!(
-                is_probe_candidate(&usb_port("ttyUSB0", *vid)),
-                "vid {vid:#06x}"
-            );
-        }
-    }
-
-    #[test]
-    fn unknown_usb_vids_are_not_candidates() {
-        assert!(!is_probe_candidate(&usb_port("ttyUSB0", 0x1234)));
+    fn usb_ports_are_candidates() {
+        assert!(is_probe_candidate(&usb_port("ttyUSB0", 0x1234)));
     }
 
     #[test]
@@ -195,12 +181,15 @@ mod tests {
     }
 
     #[test]
-    fn non_usb_ports_are_not_candidates() {
+    fn unknown_serial_ports_are_candidates() {
+        let unknown = port("/dev/ttyACM0", SerialPortType::Unknown);
+        assert!(is_probe_candidate(&unknown));
+    }
+
+    #[test]
+    fn unsupported_port_types_are_not_candidates() {
         let pci = port("ttyS0", SerialPortType::PciPort);
         assert!(!is_probe_candidate(&pci));
-
-        let unknown = port("ttyAMA0", SerialPortType::Unknown);
-        assert!(!is_probe_candidate(&unknown));
 
         let bluetooth = port("tty.MFA", SerialPortType::BluetoothPort);
         assert!(!is_probe_candidate(&bluetooth));
