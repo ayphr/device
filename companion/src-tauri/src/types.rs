@@ -61,3 +61,20 @@ pub struct FirmwareReleaseMetadata {
     pub sha256: Option<String>,
     pub signature: Option<String>,
 }
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceSettingsResult {
+    pub sampling_interval_secs: u32,
+    pub upload_interval_secs: u32,
+    pub cloud_linked: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudLinkResult {
+    pub state: String,
+    pub code: Option<String>,
+    pub expires_in_secs: u32,
+    pub message: Option<String>,
+}

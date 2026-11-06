@@ -1,6 +1,7 @@
 import {
   IconArrowLeft,
   IconActivity,
+  IconCloud,
   IconAntennaBars3,
   IconCloudDownload,
   IconDeviceDesktop,
@@ -19,13 +20,25 @@ import {
   IconWifiOff,
 } from '@tabler/icons-react';
 import { useState, useEffect, type ComponentType } from 'react';
+import { useCloudLink } from '../../lib/useCloudLink';
+import {
+  DEFAULT_SAMPLING_INTERVAL_SECS,
+  DEFAULT_UPLOAD_INTERVAL_SECS,
+  MAX_SAMPLING_INTERVAL_SECS,
+  MAX_UPLOAD_INTERVAL_SECS,
+  MIN_SAMPLING_INTERVAL_SECS,
+  MIN_UPLOAD_INTERVAL_SECS,
+  formatInterval,
+  validateIntervals,
+} from '../../lib/sync';
 import { formatLastSeen, formatRssi, formatUptime, rssiLabel, signalStrengthLabel, type DeviceInfo } from '../../lib/devices';
 import { Button, ConfirmDialog, Modal, Input } from '../../components/common';
 import { invoke } from '@tauri-apps/api/core';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { listen } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { compareVersions, normalizeFirmwareVersion } from '../../lib/version';
-import type { FirmwareInfoResult, FirmwareReleaseMetadata, FirmwareUpdateProgress, LiveDataResult } from '../../types';
+import type { DeviceSettingsResult, FirmwareInfoResult, FirmwareReleaseMetadata, FirmwareUpdateProgress, LiveDataResult } from '../../types';
 import styles from './Device.module.css';
 
 interface DevicePageProps {
@@ -35,12 +48,13 @@ interface DevicePageProps {
   readonly developerMode?: boolean;
 }
 
-type DeviceSection = 'general' | 'updates' | 'live' | 'info';
+type DeviceSection = 'general' | 'updates' | 'live' | 'cloud' | 'info';
 
 const sections: Array<{ id: DeviceSection; label: string; icon: ComponentType<{ size?: number }> }> = [
   { id: 'general', label: 'General', icon: IconSettings },
   { id: 'updates', label: 'Updates', icon: IconCloudDownload },
   { id: 'live', label: 'Live Data', icon: IconActivity },
+  { id: 'cloud', label: 'Cloud & Sync', icon: IconCloud },
   { id: 'info', label: 'Info', icon: IconInfoCircle },
 ];
 
@@ -95,6 +109,17 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
 
   const [liveData, setLiveData] = useState<LiveDataResult | null>(null);
   const [liveDataError, setLiveDataError] = useState<string | null>(null);
+
+  const [deviceSettings, setDeviceSettings] = useState<DeviceSettingsResult | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSuccess, setSettingsSuccess] = useState<string | null>(null);
+  const [samplingInput, setSamplingInput] = useState(String(DEFAULT_SAMPLING_INTERVAL_SECS));
+  const [uploadInput, setUploadInput] = useState(String(DEFAULT_UPLOAD_INTERVAL_SECS));
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isUnlinkDialogOpen, setIsUnlinkDialogOpen] = useState(false);
+  const [isUnlinking, setIsUnlinking] = useState(false);
+
+  const cloudLink = useCloudLink(device.id, device.transport);
 
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label ?? 'General';
 
@@ -182,6 +207,38 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
       clearInterval(timer);
     };
   }, [activeSection, device.id, device.transport]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSettings = async () => {
+      try {
+        const command =
+          device.transport === 'serial' ? 'get_device_settings_serial' : 'get_device_settings_ble';
+        const result = await invoke<DeviceSettingsResult>(command, { deviceId: device.id });
+        if (!cancelled) {
+          setDeviceSettings(result);
+          setSamplingInput(String(result.samplingIntervalSecs));
+          setUploadInput(String(result.uploadIntervalSecs));
+          setSettingsError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSettingsError(typeof error === 'string' ? error : 'Failed to load device settings');
+        }
+      }
+      if (!cancelled) {
+        void cloudLink.refresh();
+      }
+    };
+
+    void loadSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [device.id, device.transport, cloudLink.refresh]);
 
   const handleRestart = async () => {
     setIsRestarting(true);
@@ -292,6 +349,58 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
       throw error;
     } finally {
       setIsUpdatingWifi(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    const sampling = Number(samplingInput);
+    const upload = Number(uploadInput);
+    const validationError = validateIntervals(sampling, upload);
+    if (validationError) {
+      setSettingsError(validationError);
+      return;
+    }
+
+    setIsSavingSettings(true);
+    setSettingsError(null);
+    setSettingsSuccess(null);
+    try {
+      const command =
+        device.transport === 'serial' ? 'update_device_settings_serial' : 'update_device_settings_ble';
+      const result = await invoke<DeviceSettingsResult>(command, {
+        deviceId: device.id,
+        samplingIntervalSecs: sampling,
+        uploadIntervalSecs: upload,
+      });
+      setDeviceSettings(result);
+      setSamplingInput(String(result.samplingIntervalSecs));
+      setUploadInput(String(result.uploadIntervalSecs));
+      setSettingsSuccess('Settings saved');
+    } catch (error) {
+      setSettingsError(typeof error === 'string' ? error : 'Failed to save settings');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  const handleStartCloudLink = async () => {
+    setSettingsError(null);
+    await cloudLink.start();
+  };
+
+  const handleUnlinkCloud = async () => {
+    setIsUnlinking(true);
+    setSettingsError(null);
+    try {
+      await cloudLink.unlink();
+      setDeviceSettings((previous) =>
+        previous ? { ...previous, cloudLinked: false } : previous,
+      );
+      setIsUnlinkDialogOpen(false);
+    } catch (error) {
+      setSettingsError(typeof error === 'string' ? error : 'Failed to unlink device');
+    } finally {
+      setIsUnlinking(false);
     }
   };
 
@@ -730,6 +839,177 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
     </div>
   );
 
+  const cloudSection = (
+    <div className={styles['device-page__stacked-grid']}>
+      <article className={styles['device-page__panel']}>
+        <h2>Data collection</h2>
+        <div className={styles['device-page__setting-list']}>
+          <div className={styles['device-page__setting-row']}>
+            <div>
+              <h3>Sampling interval</h3>
+              <p>
+                How often the device takes a reading ({MIN_SAMPLING_INTERVAL_SECS} second to{' '}
+                {formatInterval(MAX_SAMPLING_INTERVAL_SECS)})
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Input
+                type="number"
+                value={samplingInput}
+                onChange={(event) => setSamplingInput(event.target.value)}
+                min={MIN_SAMPLING_INTERVAL_SECS}
+                max={MAX_SAMPLING_INTERVAL_SECS}
+              />
+              <span>sec</span>
+            </div>
+          </div>
+
+          <div className={styles['device-page__setting-row']}>
+            <div>
+              <h3>Upload interval</h3>
+              <p>
+                How often buffered readings are uploaded to Ayphr Cloud (1 minute to 6 hours). Must be at
+                least as long as the sampling interval.
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Input
+                type="number"
+                value={uploadInput}
+                onChange={(event) => setUploadInput(event.target.value)}
+                min={MIN_UPLOAD_INTERVAL_SECS}
+                max={MAX_UPLOAD_INTERVAL_SECS}
+              />
+              <span>sec</span>
+            </div>
+          </div>
+
+          <div className={styles['device-page__setting-row']}>
+            <div>
+              <h3>Save settings</h3>
+              <p>Apply the new collection intervals to this device</p>
+            </div>
+            <Button variant="secondary" onClick={handleSaveSettings} isLoading={isSavingSettings}>
+              Save
+            </Button>
+          </div>
+
+          {settingsError && (
+            <div className={styles['device-page__update-error']}>
+              <p>{settingsError}</p>
+              <Button variant="secondary" onClick={() => setSettingsError(null)}>
+                Dismiss
+              </Button>
+            </div>
+          )}
+          {settingsSuccess && (
+            <p style={{ color: 'var(--color-success, #22c55e)', margin: 0 }}>{settingsSuccess}</p>
+          )}
+          {deviceSettings && (
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+              Current: sampling {formatInterval(deviceSettings.samplingIntervalSecs)}, upload{' '}
+              {formatInterval(deviceSettings.uploadIntervalSecs)}
+            </p>
+          )}
+        </div>
+      </article>
+
+      <article className={styles['device-page__panel']}>
+        <h2>Ayphr Cloud</h2>
+        <div className={styles['device-page__setting-list']}>
+          {cloudLink.status?.state === 'linked' || (deviceSettings?.cloudLinked && cloudLink.status === null) ? (
+            <>
+              <p>This device is linked to Ayphr Cloud and uploads telemetry automatically.</p>
+              <div className={styles['device-page__setting-row']}>
+                <div>
+                  <h3>Unlink device</h3>
+                  <p>Stop telemetry uploads from this device</p>
+                </div>
+                <Button
+                  variant="danger"
+                  onClick={() => setIsUnlinkDialogOpen(true)}
+                  isLoading={isUnlinking}
+                >
+                  Unlink
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p>Link this device to Ayphr Cloud to upload telemetry and view it in the web app.</p>
+              {cloudLink.status?.state === 'pending' && cloudLink.status.code && (
+                <div style={{ textAlign: 'center', margin: '1rem 0' }}>
+                  <div
+                    style={{
+                      fontSize: '2rem',
+                      fontFamily: 'monospace',
+                      letterSpacing: '0.25rem',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {cloudLink.status.code}
+                  </div>
+                  <p>
+                    Enter this code at{' '}
+                    <button
+                      type="button"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--color-primary)',
+                        cursor: 'pointer',
+                        padding: 0,
+                        textDecoration: 'underline',
+                      }}
+                      onClick={() => void openUrl('https://ayphr.com/devices')}
+                    >
+                      ayphr.com/devices
+                    </button>{' '}
+                    to link your device. Expires in {cloudLink.status.expiresInSecs} seconds.
+                  </p>
+                </div>
+              )}
+              {cloudLink.status?.state === 'requesting' && <p>Preparing a pairing code...</p>}
+              {cloudLink.status?.state === 'error' && (
+                <p style={{ color: 'var(--color-error)' }}>
+                  {cloudLink.status.message ?? cloudLink.error ?? 'Cloud linking failed'}
+                </p>
+              )}
+              {cloudLink.error && cloudLink.status?.state !== 'error' && (
+                <p style={{ color: 'var(--color-error)' }}>{cloudLink.error}</p>
+              )}
+              <div className={styles['device-page__setting-row']}>
+                <div>
+                  <h3>Start linking</h3>
+                  <p>Generate a pairing code for this device</p>
+                </div>
+                <Button
+                  onClick={handleStartCloudLink}
+                  isLoading={cloudLink.isStarting || cloudLink.status?.state === 'requesting'}
+                  disabled={cloudLink.status?.state === 'pending'}
+                >
+                  {cloudLink.status?.state === 'pending' ? 'Waiting for link...' : 'Link to cloud'}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </article>
+
+      <ConfirmDialog
+        isOpen={isUnlinkDialogOpen}
+        title="Unlink from Ayphr Cloud"
+        confirmText="Unlink"
+        isDangerous={true}
+        isLoading={isUnlinking}
+        onConfirm={handleUnlinkCloud}
+        onCancel={() => setIsUnlinkDialogOpen(false)}
+      >
+        <p>This stops telemetry uploads from this device. You can link it again at any time.</p>
+      </ConfirmDialog>
+    </div>
+  );
+
   const liveDataSection = (
     <div className={styles['device-page__stacked-grid']}>
       <article className={styles['device-page__panel']}>
@@ -896,6 +1176,7 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
           {activeSection === 'general' && generalSection}
           {activeSection === 'updates' && updatesSection}
           {activeSection === 'live' && liveDataSection}
+          {activeSection === 'cloud' && cloudSection}
           {activeSection === 'info' && infoSection}
         </div>
       </div>

@@ -1,17 +1,21 @@
 use ayphr_protocol::{
-    read_field, verify_password, COMMAND_APPLY_SETUP, COMMAND_AUTHENTICATE,
-    COMMAND_CHANGE_PASSWORD, COMMAND_FACTORY_RESET, COMMAND_GET_FIRMWARE_INFO,
-    COMMAND_GET_LIVE_DATA, COMMAND_GET_STATUS, COMMAND_OTA_BEGIN, COMMAND_OTA_DATA,
-    COMMAND_OTA_END, COMMAND_OTA_ROLLBACK, COMMAND_RENAME_DEVICE, COMMAND_RESTART,
-    COMMAND_UPDATE_WIFI, FIRMWARE_SIGNATURE_LEN, MAX_DEVICE_NAME_LEN, RESPONSE_AUTH_FAILED,
-    RESPONSE_AUTH_LOCKED, RESPONSE_AUTH_OK, RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_ERROR,
-    RESPONSE_FACTORY_RESET_OK, RESPONSE_FIRMWARE_INFO, RESPONSE_LIVE_DATA, RESPONSE_OTA_BEGIN_OK,
-    RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RENAME_OK,
-    RESPONSE_RESTART_OK, RESPONSE_SETUP_FAILED, RESPONSE_SETUP_OK, RESPONSE_STATUS,
-    RESPONSE_UPDATE_WIFI_OK,
+    intervals_valid, read_field, verify_password, COMMAND_APPLY_SETUP, COMMAND_AUTHENTICATE,
+    COMMAND_CHANGE_PASSWORD, COMMAND_CLOUD_LINK_START, COMMAND_CLOUD_LINK_STATUS,
+    COMMAND_CLOUD_UNLINK, COMMAND_FACTORY_RESET, COMMAND_GET_DEVICE_SETTINGS,
+    COMMAND_GET_FIRMWARE_INFO, COMMAND_GET_LIVE_DATA, COMMAND_GET_STATUS, COMMAND_OTA_BEGIN,
+    COMMAND_OTA_DATA, COMMAND_OTA_END, COMMAND_OTA_ROLLBACK, COMMAND_RENAME_DEVICE,
+    COMMAND_RESTART, COMMAND_UPDATE_DEVICE_SETTINGS, COMMAND_UPDATE_WIFI,
+    DEFAULT_SAMPLING_INTERVAL_SECS, DEFAULT_UPLOAD_INTERVAL_SECS, FIRMWARE_SIGNATURE_LEN,
+    MAX_DEVICE_NAME_LEN, RESPONSE_AUTH_FAILED, RESPONSE_AUTH_LOCKED, RESPONSE_AUTH_OK,
+    RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_CLOUD_UNLINK_OK, RESPONSE_DEVICE_SETTINGS,
+    RESPONSE_DEVICE_SETTINGS_OK, RESPONSE_ERROR, RESPONSE_FACTORY_RESET_OK, RESPONSE_FIRMWARE_INFO,
+    RESPONSE_LIVE_DATA, RESPONSE_OTA_BEGIN_OK, RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK,
+    RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RENAME_OK, RESPONSE_RESTART_OK, RESPONSE_SETUP_FAILED,
+    RESPONSE_SETUP_OK, RESPONSE_STATUS, RESPONSE_UPDATE_WIFI_OK,
 };
-use log::info;
+use log::{info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::config::{DeviceSetup, DeviceSetupData};
 
@@ -38,15 +42,15 @@ pub fn take_wifi_reconnect_request() -> bool {
     WIFI_RECONNECT_REQUESTED.swap(false, Ordering::SeqCst)
 }
 
-pub fn process_ble_request(setup: &DeviceSetup, data: &[u8]) -> Vec<u8> {
+pub fn process_ble_request(setup: &Arc<DeviceSetup>, data: &[u8]) -> Vec<u8> {
     process_request(setup, data, false)
 }
 
-pub fn process_serial_request(setup: &DeviceSetup, data: &[u8]) -> Vec<u8> {
+pub fn process_serial_request(setup: &Arc<DeviceSetup>, data: &[u8]) -> Vec<u8> {
     process_request(setup, data, true)
 }
 
-fn process_request(setup: &DeviceSetup, data: &[u8], bypass_auth: bool) -> Vec<u8> {
+fn process_request(setup: &Arc<DeviceSetup>, data: &[u8], bypass_auth: bool) -> Vec<u8> {
     if data.is_empty() {
         return vec![RESPONSE_ERROR];
     }
@@ -64,6 +68,13 @@ fn process_request(setup: &DeviceSetup, data: &[u8], bypass_auth: bool) -> Vec<u
         COMMAND_UPDATE_WIFI => handle_update_wifi(setup, data, &mut cursor, bypass_auth),
         COMMAND_GET_FIRMWARE_INFO => handle_get_firmware_info(),
         COMMAND_GET_LIVE_DATA => handle_get_live_data(),
+        COMMAND_GET_DEVICE_SETTINGS => handle_get_device_settings(setup, bypass_auth),
+        COMMAND_UPDATE_DEVICE_SETTINGS => {
+            handle_update_device_settings(setup, data, &mut cursor, bypass_auth)
+        }
+        COMMAND_CLOUD_LINK_START => handle_cloud_link_start(setup, bypass_auth),
+        COMMAND_CLOUD_LINK_STATUS => handle_cloud_link_status(setup, bypass_auth),
+        COMMAND_CLOUD_UNLINK => handle_cloud_unlink(setup, bypass_auth),
         COMMAND_RENAME_DEVICE => handle_rename_device(setup, data, &mut cursor, bypass_auth),
         COMMAND_OTA_BEGIN => handle_ota_begin(setup, data, &mut cursor, bypass_auth),
         COMMAND_OTA_DATA => handle_ota_data(setup, data, &mut cursor, bypass_auth),
@@ -181,6 +192,31 @@ fn handle_apply_setup(
         .map(|value| value != 0)
         .unwrap_or(false);
 
+    let sampling_interval_secs = if *cursor + 2 + 8 <= data.len() {
+        u32::from_le_bytes([
+            data[*cursor + 2],
+            data[*cursor + 3],
+            data[*cursor + 4],
+            data[*cursor + 5],
+        ])
+    } else {
+        DEFAULT_SAMPLING_INTERVAL_SECS
+    };
+    let upload_interval_secs = if *cursor + 2 + 8 <= data.len() {
+        u32::from_le_bytes([
+            data[*cursor + 6],
+            data[*cursor + 7],
+            data[*cursor + 8],
+            data[*cursor + 9],
+        ])
+    } else {
+        DEFAULT_UPLOAD_INTERVAL_SECS
+    };
+
+    if !ayphr_protocol::intervals_valid(sampling_interval_secs, upload_interval_secs) {
+        return vec![RESPONSE_SETUP_FAILED];
+    }
+
     if auth_required && dev_pass.is_empty() {
         return vec![RESPONSE_SETUP_FAILED];
     }
@@ -202,6 +238,9 @@ fn handle_apply_setup(
     if !dev_name.is_empty() {
         new_data.device_name = dev_name;
     }
+    new_data.sampling_interval_secs = sampling_interval_secs;
+    new_data.upload_interval_secs = upload_interval_secs;
+    new_data.normalize_intervals();
     new_data.configured = true;
 
     let wifi_required = new_data.wifi_required;
@@ -258,6 +297,7 @@ fn handle_factory_reset(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
             state.auth_limiter.reset();
         }
         crate::ble::refresh_advertising(setup);
+        crate::cloud::reset();
         info!("Factory reset complete");
         vec![RESPONSE_FACTORY_RESET_OK]
     } else {
@@ -444,6 +484,116 @@ fn handle_get_live_data() -> Vec<u8> {
             response
         }
         None => vec![RESPONSE_LIVE_DATA, 0],
+    }
+}
+
+fn check_auth(setup: &DeviceSetup, bypass_auth: bool) -> Option<Vec<u8>> {
+    let state = setup.lock_state();
+    if !bypass_auth && state.data.configured && state.data.auth_required && !state.authenticated {
+        Some(vec![RESPONSE_AUTH_FAILED])
+    } else {
+        None
+    }
+}
+
+fn handle_get_device_settings(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
+    if let Some(response) = check_auth(setup, bypass_auth) {
+        return response;
+    }
+
+    let state = setup.lock_state();
+    let mut response = Vec::with_capacity(10);
+    response.push(RESPONSE_DEVICE_SETTINGS);
+    response.extend_from_slice(&state.data.sampling_interval_secs.to_le_bytes());
+    response.extend_from_slice(&state.data.upload_interval_secs.to_le_bytes());
+    response.push(if state.data.cloud_linked() { 1 } else { 0 });
+    response
+}
+
+fn handle_update_device_settings(
+    setup: &DeviceSetup,
+    data: &[u8],
+    cursor: &mut usize,
+    bypass_auth: bool,
+) -> Vec<u8> {
+    if let Some(response) = check_auth(setup, bypass_auth) {
+        return response;
+    }
+
+    if *cursor + 8 > data.len() {
+        return vec![RESPONSE_ERROR];
+    }
+
+    let sampling_interval_secs = u32::from_le_bytes([
+        data[*cursor],
+        data[*cursor + 1],
+        data[*cursor + 2],
+        data[*cursor + 3],
+    ]);
+    let upload_interval_secs = u32::from_le_bytes([
+        data[*cursor + 4],
+        data[*cursor + 5],
+        data[*cursor + 6],
+        data[*cursor + 7],
+    ]);
+
+    if !intervals_valid(sampling_interval_secs, upload_interval_secs) {
+        warn!(
+            "Rejecting invalid device settings: sampling={}s upload={}s",
+            sampling_interval_secs, upload_interval_secs
+        );
+        return vec![RESPONSE_ERROR];
+    }
+
+    let mut new_data = {
+        let state = setup.lock_state();
+        state.data.clone()
+    };
+    new_data.sampling_interval_secs = sampling_interval_secs;
+    new_data.upload_interval_secs = upload_interval_secs;
+    new_data.normalize_intervals();
+
+    match DeviceSetup::save_to_nvs(&setup.nvs, &new_data) {
+        Ok(()) => {
+            let mut state = setup.lock_state();
+            state.data.sampling_interval_secs = new_data.sampling_interval_secs;
+            state.data.upload_interval_secs = new_data.upload_interval_secs;
+            info!(
+                "Device settings updated: sampling={}s upload={}s",
+                new_data.sampling_interval_secs, new_data.upload_interval_secs
+            );
+            vec![RESPONSE_DEVICE_SETTINGS_OK]
+        }
+        Err(_) => vec![RESPONSE_ERROR],
+    }
+}
+
+fn handle_cloud_link_start(setup: &Arc<DeviceSetup>, bypass_auth: bool) -> Vec<u8> {
+    if let Some(response) = check_auth(setup, bypass_auth) {
+        return response;
+    }
+
+    crate::cloud::start_link(Arc::clone(setup));
+    crate::cloud::status_response(setup)
+}
+
+fn handle_cloud_link_status(setup: &Arc<DeviceSetup>, bypass_auth: bool) -> Vec<u8> {
+    if let Some(response) = check_auth(setup, bypass_auth) {
+        return response;
+    }
+
+    crate::cloud::refresh_link(Arc::clone(setup));
+    crate::cloud::status_response(setup)
+}
+
+fn handle_cloud_unlink(setup: &Arc<DeviceSetup>, bypass_auth: bool) -> Vec<u8> {
+    if let Some(response) = check_auth(setup, bypass_auth) {
+        return response;
+    }
+
+    match crate::cloud::unlink(setup) {
+        Ok(()) => vec![RESPONSE_CLOUD_UNLINK_OK],
+        Err(_) => vec![RESPONSE_ERROR],
     }
 }
 

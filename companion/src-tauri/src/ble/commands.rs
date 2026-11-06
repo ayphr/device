@@ -120,6 +120,8 @@ pub async fn submit_ble_setup(
     device_password: String,
     auth_required: bool,
     skip_wifi: bool,
+    sampling_interval_secs: u32,
+    upload_interval_secs: u32,
     app: AppHandle,
     store: State<'_, BleDeviceStore>,
 ) -> Result<BleConnectionState, String> {
@@ -136,6 +138,8 @@ pub async fn submit_ble_setup(
         &device_password,
         auth_required,
         skip_wifi,
+        sampling_interval_secs,
+        upload_interval_secs,
     )
     .await?;
 
@@ -267,6 +271,69 @@ pub async fn get_live_data_ble(
         .map_err(|error| log_string_error("live data connect failed", error, "ble"))?;
     let transport = Transport::Ble(connection);
     commands::do_get_live_data(&transport).await
+}
+
+#[tauri::command]
+pub async fn get_device_settings_ble(
+    device_id: String,
+    store: State<'_, BleDeviceStore>,
+) -> Result<crate::types::DeviceSettingsResult, String> {
+    let connection = ensure_connected(device_id.clone(), &store)
+        .await
+        .map_err(|error| log_string_error("settings connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_get_device_settings(&transport).await
+}
+
+#[tauri::command]
+pub async fn update_device_settings_ble(
+    device_id: String,
+    sampling_interval_secs: u32,
+    upload_interval_secs: u32,
+    store: State<'_, BleDeviceStore>,
+) -> Result<crate::types::DeviceSettingsResult, String> {
+    let connection = ensure_connected(device_id.clone(), &store)
+        .await
+        .map_err(|error| log_string_error("settings connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_update_device_settings(&transport, sampling_interval_secs, upload_interval_secs)
+        .await
+}
+
+#[tauri::command]
+pub async fn start_cloud_link_ble(
+    device_id: String,
+    store: State<'_, BleDeviceStore>,
+) -> Result<crate::types::CloudLinkResult, String> {
+    let connection = ensure_connected(device_id.clone(), &store)
+        .await
+        .map_err(|error| log_string_error("cloud link connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_start_cloud_link(&transport).await
+}
+
+#[tauri::command]
+pub async fn get_cloud_link_status_ble(
+    device_id: String,
+    store: State<'_, BleDeviceStore>,
+) -> Result<crate::types::CloudLinkResult, String> {
+    let connection = ensure_connected(device_id.clone(), &store)
+        .await
+        .map_err(|error| log_string_error("cloud link connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_cloud_link_status(&transport).await
+}
+
+#[tauri::command]
+pub async fn unlink_cloud_ble(
+    device_id: String,
+    store: State<'_, BleDeviceStore>,
+) -> Result<(), String> {
+    let connection = ensure_connected(device_id.clone(), &store)
+        .await
+        .map_err(|error| log_string_error("cloud unlink connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_unlink_cloud(&transport).await
 }
 
 #[tauri::command]

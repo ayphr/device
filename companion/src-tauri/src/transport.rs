@@ -3,9 +3,11 @@ use crate::constants::BLE_OTA_WINDOW;
 use crate::protocol::{
     parse_firmware_info_response, parse_live_data_response, parse_status_response,
 };
-use crate::types::{ParsedFirmwareInfo, ParsedStatus};
+use crate::types::{CloudLinkResult, DeviceSettingsResult, ParsedFirmwareInfo, ParsedStatus};
 use ayphr_protocol::{
-    SensorPacket, COMMAND_GET_FIRMWARE_INFO, COMMAND_GET_LIVE_DATA, COMMAND_GET_STATUS,
+    SensorPacket, COMMAND_CLOUD_LINK_START, COMMAND_CLOUD_LINK_STATUS, COMMAND_CLOUD_UNLINK,
+    COMMAND_GET_DEVICE_SETTINGS, COMMAND_GET_FIRMWARE_INFO, COMMAND_GET_LIVE_DATA,
+    COMMAND_GET_STATUS, COMMAND_UPDATE_DEVICE_SETTINGS,
 };
 
 pub enum Transport {
@@ -59,5 +61,43 @@ impl Transport {
     pub async fn query_live_data(&self) -> Result<Option<SensorPacket>, String> {
         let response = self.send_command(vec![COMMAND_GET_LIVE_DATA]).await?;
         parse_live_data_response(&response)
+    }
+
+    pub async fn query_device_settings(&self) -> Result<DeviceSettingsResult, String> {
+        let response = self.send_command(vec![COMMAND_GET_DEVICE_SETTINGS]).await?;
+        crate::protocol::parse_device_settings_response(&response)
+    }
+
+    pub async fn update_device_settings(
+        &self,
+        sampling_interval_secs: u32,
+        upload_interval_secs: u32,
+    ) -> Result<DeviceSettingsResult, String> {
+        let mut command = vec![COMMAND_UPDATE_DEVICE_SETTINGS];
+        command.extend_from_slice(&sampling_interval_secs.to_le_bytes());
+        command.extend_from_slice(&upload_interval_secs.to_le_bytes());
+        let response = self.send_command(command).await?;
+        if response.first().copied() != Some(ayphr_protocol::RESPONSE_DEVICE_SETTINGS_OK) {
+            return Err("Device rejected settings update".to_string());
+        }
+        self.query_device_settings().await
+    }
+
+    pub async fn start_cloud_link(&self) -> Result<CloudLinkResult, String> {
+        let response = self.send_command(vec![COMMAND_CLOUD_LINK_START]).await?;
+        crate::protocol::parse_cloud_link_response(&response)
+    }
+
+    pub async fn query_cloud_link(&self) -> Result<CloudLinkResult, String> {
+        let response = self.send_command(vec![COMMAND_CLOUD_LINK_STATUS]).await?;
+        crate::protocol::parse_cloud_link_response(&response)
+    }
+
+    pub async fn unlink_cloud(&self) -> Result<(), String> {
+        let response = self.send_command(vec![COMMAND_CLOUD_UNLINK]).await?;
+        if response.first().copied() != Some(ayphr_protocol::RESPONSE_CLOUD_UNLINK_OK) {
+            return Err("Device rejected cloud unlink request".to_string());
+        }
+        Ok(())
     }
 }

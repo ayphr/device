@@ -1,6 +1,7 @@
 use ayphr_protocol::{
-    hash_password, is_hashed_password, AuthRateLimiter, DEFAULT_PBKDF2_ITERATIONS,
-    PASSWORD_SALT_LEN,
+    clamp_sampling_interval, clamp_upload_interval, hash_password, is_hashed_password,
+    AuthRateLimiter, DEFAULT_PBKDF2_ITERATIONS, DEFAULT_SAMPLING_INTERVAL_SECS,
+    DEFAULT_UPLOAD_INTERVAL_SECS, PASSWORD_SALT_LEN,
 };
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
 use log::{info, warn};
@@ -17,6 +18,9 @@ const NVS_KEY_DEV_PASS: &str = "dev_pass";
 const NVS_KEY_PASS_HASHED: &str = "pass_hashed";
 const NVS_KEY_AUTH_REQUIRED: &str = "auth_required";
 const NVS_KEY_WIFI_REQUIRED: &str = "wifi_required";
+const NVS_KEY_SAMPLING_SECS: &str = "sample_secs";
+const NVS_KEY_UPLOAD_SECS: &str = "upload_secs";
+const NVS_KEY_CLOUD_TOKEN: &str = "cloud_token";
 
 #[derive(Clone)]
 pub struct DeviceSetupData {
@@ -27,6 +31,9 @@ pub struct DeviceSetupData {
     pub auth_required: bool,
     pub wifi_required: bool,
     pub configured: bool,
+    pub sampling_interval_secs: u32,
+    pub upload_interval_secs: u32,
+    pub cloud_token: String,
 }
 
 impl DeviceSetupData {
@@ -36,6 +43,18 @@ impl DeviceSetupData {
         } else {
             hash_password(password, &random_salt(), DEFAULT_PBKDF2_ITERATIONS)
         };
+    }
+
+    /// Clamps stored intervals into their supported ranges and guarantees the
+    /// upload interval is never shorter than the sampling interval.
+    pub fn normalize_intervals(&mut self) {
+        self.sampling_interval_secs = clamp_sampling_interval(self.sampling_interval_secs);
+        self.upload_interval_secs =
+            clamp_upload_interval(self.upload_interval_secs, self.sampling_interval_secs);
+    }
+
+    pub fn cloud_linked(&self) -> bool {
+        !self.cloud_token.is_empty()
     }
 }
 
@@ -60,6 +79,9 @@ impl Default for DeviceSetupData {
             auth_required: true,
             wifi_required: true,
             configured: false,
+            sampling_interval_secs: DEFAULT_SAMPLING_INTERVAL_SECS,
+            upload_interval_secs: DEFAULT_UPLOAD_INTERVAL_SECS,
+            cloud_token: String::new(),
         }
     }
 }
@@ -194,6 +216,28 @@ impl DeviceSetup {
         state.data.wifi_required =
             self.nvs.get_u8(NVS_KEY_WIFI_REQUIRED).unwrap_or(Some(1)) == Some(1);
 
+        state.data.sampling_interval_secs = self
+            .nvs
+            .get_u32(NVS_KEY_SAMPLING_SECS)
+            .ok()
+            .flatten()
+            .unwrap_or(DEFAULT_SAMPLING_INTERVAL_SECS);
+        state.data.upload_interval_secs = self
+            .nvs
+            .get_u32(NVS_KEY_UPLOAD_SECS)
+            .ok()
+            .flatten()
+            .unwrap_or(DEFAULT_UPLOAD_INTERVAL_SECS);
+        state.data.normalize_intervals();
+
+        state.data.cloud_token = self
+            .nvs
+            .get_str(NVS_KEY_CLOUD_TOKEN, &mut buf)
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+            .to_string();
+
         if state.data.configured
             && ((state.data.wifi_required && state.data.wifi_ssid.is_empty())
                 || (state.data.auth_required && state.data.device_password_hash.is_empty()))
@@ -233,6 +277,9 @@ impl DeviceSetup {
             NVS_KEY_WIFI_REQUIRED,
             if data.wifi_required { 1 } else { 0 },
         )?;
+        nvs.set_u32(NVS_KEY_SAMPLING_SECS, data.sampling_interval_secs)?;
+        nvs.set_u32(NVS_KEY_UPLOAD_SECS, data.upload_interval_secs)?;
+        nvs.set_str(NVS_KEY_CLOUD_TOKEN, &data.cloud_token)?;
         info!("Setup persisted to NVS");
         Ok(())
     }
