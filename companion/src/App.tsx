@@ -1,12 +1,8 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { IconSettings } from '@tabler/icons-react';
 import { CurrentPage, type DeviceConnectionState } from './types';
 import Home from './pages/home/Home';
-import StatsPage from './pages/stats/Stats';
-import SettingsPage, { type UpdateCheckFeedback } from './pages/settings/Settings';
-import DevicePage from './pages/device/Device';
-import SetupPage from './pages/setup/Setup';
-import AuthPage from './pages/auth/Auth';
+import type { UpdateCheckFeedback } from './pages/settings/Settings';
 import { Button, Modal, IconButton } from './components/common';
 import { LiquidChromeLogo } from 'liquidity-react';
 import { type DeviceInfo } from './lib/devices';
@@ -24,15 +20,88 @@ import { relaunch } from '@tauri-apps/plugin-process';
 import styles from './App.module.css';
 import logo from './assets/logo.svg';
 
+const StatsPage = lazy(() => import('./pages/stats/Stats'));
+const SettingsPage = lazy(() => import('./pages/settings/Settings'));
+const DevicePage = lazy(() => import('./pages/device/Device'));
+const SetupPage = lazy(() => import('./pages/setup/Setup'));
+const AuthPage = lazy(() => import('./pages/auth/Auth'));
+
 const AUTOMATIC_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
+
+function LoadingSkeleton() {
+  return (
+    <div className={styles['app-content__loading']} aria-busy="true" aria-label="Loading">
+      <div className={styles['loading-skeleton']} aria-hidden="true">
+        <div className={styles['loading-skeleton__header']}>
+          <span className={`${styles['loading-skeleton__bar']} ${styles['loading-skeleton__bar--title']}`} />
+          <span className={`${styles['loading-skeleton__bar']} ${styles['loading-skeleton__bar--button']}`} />
+        </div>
+        <div className={styles['loading-skeleton__grid']}>
+          <span className={`${styles['loading-skeleton__card']} ${styles['loading-skeleton__card--large']}`} />
+          <span className={styles['loading-skeleton__card']} />
+          <span className={styles['loading-skeleton__card']} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function areDevicesEquivalent(left: DeviceInfo, right: DeviceInfo) {
+  return (
+    left.id === right.id &&
+    left.name === right.name &&
+    left.modelId === right.modelId &&
+    left.transport === right.transport &&
+    left.setupComplete === right.setupComplete &&
+    left.authRequired === right.authRequired &&
+    left.address === right.address &&
+    left.rssi === right.rssi &&
+    left.signalStrength === right.signalStrength &&
+    left.connected === right.connected &&
+    left.authenticated === right.authenticated &&
+    left.connectable === right.connectable &&
+    left.txPowerLevel === right.txPowerLevel &&
+    left.firmwareVersion === right.firmwareVersion &&
+    Math.floor(left.lastSeenSecondsAgo / 5) === Math.floor(right.lastSeenSecondsAgo / 5) &&
+    left.manufacturerData.length === right.manufacturerData.length &&
+    left.manufacturerData.every((value, index) => value === right.manufacturerData[index]) &&
+    left.serviceUuids.length === right.serviceUuids.length &&
+    left.serviceUuids.every((value, index) => value === right.serviceUuids[index])
+  );
+}
 
 function replaceDevicesForTransport(
   currentDevices: DeviceInfo[],
   incomingDevices: DeviceInfo[],
   transport: DeviceInfo['transport'],
 ) {
-  const retainedDevices = currentDevices.filter((device) => device.transport !== transport);
-  return [...retainedDevices, ...incomingDevices];
+  const incomingById = new Map(incomingDevices.map((device) => [device.id, device]));
+  const currentIds = new Set<string>();
+  const nextDevices = currentDevices
+    .filter((device) => device.transport !== transport || incomingById.has(device.id))
+    .map((device) => {
+      if (device.transport !== transport) {
+        return device;
+      }
+
+      currentIds.add(device.id);
+      return incomingById.get(device.id) ?? device;
+    });
+
+  for (const device of incomingDevices) {
+    if (!currentIds.has(device.id) && !currentDevices.some((current) => current.id === device.id)) {
+      nextDevices.push(device);
+    }
+  }
+
+  if (
+    currentDevices.length === nextDevices.length &&
+    currentDevices.every((device, index) => areDevicesEquivalent(device, nextDevices[index]))
+  ) {
+    return currentDevices;
+  }
+
+  return nextDevices;
 }
 
 function mergeInitialDevices(...deviceGroups: DeviceInfo[][]) {
@@ -492,48 +561,50 @@ function App() {
       </header>
 
       <main className={styles['app-content']}>
-        {page === 'home' && (
-          <Home
-            devices={devices}
-            isSearchingForGeoDevices={isSearchingForGeoDevices}
-            onOpenDevice={openDevice}
-          />
-        )}
-        {page === 'stats' && <StatsPage />}
-        {page === 'settings' && (
-          <SettingsPage
-            settings={settings}
-            onSettingsChange={setSettings}
-            onCheckForUpdates={handleCheckForUpdates}
-            isCheckingForUpdate={isCheckingForUpdate}
-            updateCheckFeedback={updateCheckFeedback}
-          />
-        )}
+        <Suspense fallback={<LoadingSkeleton />}>
+          {page === 'home' && (
+            <Home
+              devices={devices}
+              isSearchingForGeoDevices={isSearchingForGeoDevices}
+              onOpenDevice={openDevice}
+            />
+          )}
+          {page === 'stats' && <StatsPage />}
+          {page === 'settings' && (
+            <SettingsPage
+              settings={settings}
+              onSettingsChange={setSettings}
+              onCheckForUpdates={handleCheckForUpdates}
+              isCheckingForUpdate={isCheckingForUpdate}
+              updateCheckFeedback={updateCheckFeedback}
+            />
+          )}
 
-        {page === 'setup' && selectedDevice ? (
-          <SetupPage
-            key={selectedDevice.id}
-            device={selectedDevice}
-            onBack={goBackToDevices}
-            onComplete={completeDeviceAuthSetup}
-          />
-        ) : null}
-        {page === 'auth' && selectedDevice ? (
-          <AuthPage
-            key={selectedDevice.id}
-            device={selectedDevice}
-            onBack={goBackToDevices}
-            onAuthenticated={completeDeviceAuthSetup}
-          />
-        ) : null}
-        {page === 'device' && selectedDevice ? (
-          <DevicePage
-            device={selectedDevice}
-            onBack={goBackToDevices}
-            onDeviceUpdated={handleDeviceUpdated}
-            developerMode={settings.developer.enabled}
-          />
-        ) : null}
+          {page === 'setup' && selectedDevice ? (
+            <SetupPage
+              key={selectedDevice.id}
+              device={selectedDevice}
+              onBack={goBackToDevices}
+              onComplete={completeDeviceAuthSetup}
+            />
+          ) : null}
+          {page === 'auth' && selectedDevice ? (
+            <AuthPage
+              key={selectedDevice.id}
+              device={selectedDevice}
+              onBack={goBackToDevices}
+              onAuthenticated={completeDeviceAuthSetup}
+            />
+          ) : null}
+          {page === 'device' && selectedDevice ? (
+            <DevicePage
+              device={selectedDevice}
+              onBack={goBackToDevices}
+              onDeviceUpdated={handleDeviceUpdated}
+              developerMode={settings.developer.enabled}
+            />
+          ) : null}
+        </Suspense>
       </main>
 
       <Modal
