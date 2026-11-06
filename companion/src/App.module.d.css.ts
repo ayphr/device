@@ -13,6 +13,15 @@ declare const classNames: {
   readonly "app-icon-button": "app-icon-button";
   readonly "app-icon-button--active": "app-icon-button--active";
   readonly "app-content": "app-content";
+  readonly "app-content__loading": "app-content__loading";
+  readonly "loading-skeleton": "loading-skeleton";
+  readonly "loading-skeleton__header": "loading-skeleton__header";
+  readonly "loading-skeleton__bar": "loading-skeleton__bar";
+  readonly "loading-skeleton__bar--title": "loading-skeleton__bar--title";
+  readonly "loading-skeleton__bar--button": "loading-skeleton__bar--button";
+  readonly "loading-skeleton__grid": "loading-skeleton__grid";
+  readonly "loading-skeleton__card": "loading-skeleton__card";
+  readonly "loading-skeleton__card--large": "loading-skeleton__card--large";
   readonly "update-modal__content": "update-modal__content";
   readonly "update-modal__copy": "update-modal__copy";
   readonly "update-modal__versions": "update-modal__versions";
