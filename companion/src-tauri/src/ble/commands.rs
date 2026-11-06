@@ -17,8 +17,8 @@ use super::protocol::parse_uuid;
 use super::scanner::get_primary_adapter;
 use super::state::{
     connection_lock, emit_devices, get_live_peripheral, refresh_snapshots_with_connection_state,
-    remove_live_peripheral, upsert_connection, upsert_live_peripheral, ActiveBleConnection,
-    BleDeviceStore,
+    remove_connection_if_matches, remove_live_peripheral, upsert_connection,
+    upsert_live_peripheral, ActiveBleConnection, BleDeviceStore,
 };
 
 const DISCOVERY_RETRY_ATTEMPTS: usize = 5;
@@ -35,12 +35,16 @@ pub async fn connect_ble_device(
     let mut connection = ensure_connected(device_id.clone(), &store)
         .await
         .map_err(|error| log_string_error("connect failed", error, "ble"))?;
-    let status = Transport::Ble(connection.clone())
-        .query_status()
-        .await
-        .map_err(|error| log_string_error("status query failed", error, "ble"))?;
+    let status = match Transport::Ble(connection.clone()).query_status().await {
+        Ok(status) => status,
+        Err(error) => {
+            invalidate_connection(&device_id, &store, &connection).await;
+            return Err(log_string_error("status query failed", error, "ble"));
+        }
+    };
     connection.setup_complete = status.setup_complete;
     connection.authenticated = status.authenticated;
+    connection.auth_required = status.auth_required;
     upsert_connection(&store, &device_id, connection.clone());
     refresh_snapshots_with_connection_state(&store);
     emit_devices(&app, &store);
@@ -62,9 +66,17 @@ pub async fn authenticate_ble_device(
     ayphr_protocol::append_field(&mut command, &password)
         .map_err(|error| log_string_error("authenticate payload encoding failed", error, "ble"))?;
 
-    let response = super::protocol::send_command(&connection, command)
-        .await
-        .map_err(|error| log_string_error("authenticate command failed", error, "ble"))?;
+    let response = match super::protocol::send_command(&connection, command).await {
+        Ok(response) => response,
+        Err(error) => {
+            invalidate_connection(&device_id, &store, &connection).await;
+            return Err(log_string_error(
+                "authenticate command failed",
+                error,
+                "ble",
+            ));
+        }
+    };
     match response.first().copied() {
         Some(RESPONSE_AUTH_OK) => {
             connection.authenticated = true;
@@ -100,12 +112,20 @@ pub async fn authenticate_ble_device(
         }
     }
 
-    let status = Transport::Ble(connection.clone())
-        .query_status()
-        .await
-        .map_err(|error| log_string_error("post-auth status query failed", error, "ble"))?;
+    let status = match Transport::Ble(connection.clone()).query_status().await {
+        Ok(status) => status,
+        Err(error) => {
+            invalidate_connection(&device_id, &store, &connection).await;
+            return Err(log_string_error(
+                "post-auth status query failed",
+                error,
+                "ble",
+            ));
+        }
+    };
     connection.setup_complete = status.setup_complete;
     connection.authenticated = status.authenticated;
+    connection.auth_required = status.auth_required;
     upsert_connection(&store, &device_id, connection.clone());
     refresh_snapshots_with_connection_state(&store);
     emit_devices(&app, &store);
@@ -133,7 +153,7 @@ pub async fn submit_ble_setup(
         .map_err(|error| log_string_error("setup connect failed", error, "ble"))?;
     let transport = Transport::Ble(connection.clone());
 
-    let result = commands::do_submit_setup(
+    let result = match commands::do_submit_setup(
         &transport,
         &device_name,
         &wifi_ssid,
@@ -144,14 +164,29 @@ pub async fn submit_ble_setup(
         sampling_interval_secs,
         upload_interval_secs,
     )
-    .await?;
+    .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            invalidate_connection(&device_id, &store, &connection).await;
+            return Err(error);
+        }
+    };
 
-    let status = transport
-        .query_status()
-        .await
-        .map_err(|error| log_string_error("post-setup status query failed", error, "ble"))?;
+    let status = match transport.query_status().await {
+        Ok(status) => status,
+        Err(error) => {
+            invalidate_connection(&device_id, &store, &connection).await;
+            return Err(log_string_error(
+                "post-setup status query failed",
+                error,
+                "ble",
+            ));
+        }
+    };
     connection.setup_complete = status.setup_complete;
     connection.authenticated = status.authenticated;
+    connection.auth_required = status.auth_required;
     upsert_connection(&store, &device_id, connection.clone());
     refresh_snapshots_with_connection_state(&store);
     emit_devices(&app, &store);
@@ -167,7 +202,7 @@ pub async fn restart_ble_device(
     let connection = ensure_connected(device_id.clone(), &store)
         .await
         .map_err(|error| log_string_error("restart connect failed", error, "ble"))?;
-    let transport = Transport::Ble(connection);
+    let transport = Transport::Ble(connection.clone());
     commands::do_restart(&transport).await
 }
 
@@ -179,7 +214,7 @@ pub async fn factory_reset_ble_device(
     let connection = ensure_connected(device_id.clone(), &store)
         .await
         .map_err(|error| log_string_error("factory reset connect failed", error, "ble"))?;
-    let transport = Transport::Ble(connection);
+    let transport = Transport::Ble(connection.clone());
     commands::do_factory_reset(&transport).await
 }
 
@@ -193,7 +228,7 @@ pub async fn change_ble_device_password(
     let connection = ensure_connected(device_id.clone(), &store)
         .await
         .map_err(|error| log_string_error("change password connect failed", error, "ble"))?;
-    let transport = Transport::Ble(connection);
+    let transport = Transport::Ble(connection.clone());
     commands::do_change_password(&transport, &current_password, &new_password).await
 }
 
@@ -207,7 +242,7 @@ pub async fn rename_ble_device(
     let connection = ensure_connected(device_id.clone(), &store)
         .await
         .map_err(|error| log_string_error("rename connect failed", error, "ble"))?;
-    let transport = Transport::Ble(connection);
+    let transport = Transport::Ble(connection.clone());
     commands::do_rename_device(&transport, &name).await?;
 
     let status = transport
@@ -353,7 +388,7 @@ pub async fn update_firmware_ble(
     let connection = ensure_connected(device_id.clone(), &store)
         .await
         .map_err(|error| log_string_error("firmware update connect failed", error, "ble"))?;
-    let transport = Transport::Ble(connection);
+    let transport = Transport::Ble(connection.clone());
     let result = commands::do_update_firmware(
         &transport,
         firmware_data,
@@ -366,6 +401,8 @@ pub async fn update_firmware_ble(
 
     if result.is_ok() {
         reconnect_after_firmware_update(&device_id, &app, &store).await;
+    } else {
+        invalidate_connection(&device_id, &store, &connection).await;
     }
 
     result
@@ -383,7 +420,7 @@ pub async fn download_and_update_firmware_ble(
     let connection = ensure_connected(device_id.clone(), &store)
         .await
         .map_err(|error| log_string_error("firmware update connect failed", error, "ble"))?;
-    let transport = Transport::Ble(connection);
+    let transport = Transport::Ble(connection.clone());
     let result = commands::do_download_and_update_firmware(
         &transport,
         &download_url,
@@ -397,6 +434,8 @@ pub async fn download_and_update_firmware_ble(
 
     if result.is_ok() {
         reconnect_after_firmware_update(&device_id, &app, &store).await;
+    } else {
+        invalidate_connection(&device_id, &store, &connection).await;
     }
 
     result
@@ -497,6 +536,23 @@ async fn ensure_connected(
     Ok(connection)
 }
 
+async fn invalidate_connection(
+    device_id: &str,
+    store: &BleDeviceStore,
+    connection: &ActiveBleConnection,
+) {
+    let device_lock = connection_lock(store, device_id);
+    let _connection_guard = device_lock.lock().await;
+
+    let peripheral = remove_connection_if_matches(store, device_id, &connection.command_lock);
+    if peripheral.is_some() {
+        refresh_snapshots_with_connection_state(store);
+    }
+    if let Some(peripheral) = peripheral {
+        let _ = peripheral.disconnect().await;
+    }
+}
+
 async fn build_connection(
     device_id: String,
     peripheral: Peripheral,
@@ -562,13 +618,13 @@ async fn build_connection(
             )
         })?;
 
-    let (initial_setup_complete, initial_authenticated) = {
+    let (initial_setup_complete, initial_authenticated, initial_auth_required) = {
         let devices = store.devices.lock().unwrap();
         devices
             .iter()
             .find(|d| d.id == device_id)
-            .map(|d| (d.setup_complete, d.authenticated))
-            .unwrap_or((false, false))
+            .map(|d| (d.setup_complete, d.authenticated, d.auth_required))
+            .unwrap_or((false, false, false))
     };
 
     peripheral
@@ -582,6 +638,7 @@ async fn build_connection(
         tx_characteristic,
         setup_complete: initial_setup_complete,
         authenticated: initial_authenticated,
+        auth_required: initial_auth_required,
         command_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
     })
 }
@@ -615,6 +672,7 @@ async fn reconnect_after_firmware_update(device_id: &str, app: &AppHandle, store
                 tracing::debug!(
                     "[ble] firmware reconnect status attempt {attempt}/{FIRMWARE_RECONNECT_ATTEMPTS} failed: {error}"
                 );
+                invalidate_connection(device_id, store, &connection).await;
                 continue;
             }
         };
@@ -622,6 +680,7 @@ async fn reconnect_after_firmware_update(device_id: &str, app: &AppHandle, store
         let mut connection = connection;
         connection.setup_complete = status.setup_complete;
         connection.authenticated = status.authenticated;
+        connection.auth_required = status.auth_required;
         upsert_connection(store, device_id, connection);
         refresh_snapshots_with_connection_state(store);
         emit_devices(app, store);

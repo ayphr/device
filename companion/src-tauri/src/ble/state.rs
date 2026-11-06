@@ -22,6 +22,7 @@ pub struct ActiveBleConnection {
     pub tx_characteristic: Characteristic,
     pub setup_complete: bool,
     pub authenticated: bool,
+    pub auth_required: bool,
     pub command_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
@@ -33,6 +34,7 @@ pub struct BleDeviceSnapshot {
     pub model_id: String,
     pub transport: String,
     pub setup_complete: bool,
+    pub auth_required: bool,
     pub address: String,
     pub rssi: Option<i16>,
     pub signal_strength: u8,
@@ -76,6 +78,21 @@ pub fn remove_connection(store: &BleDeviceStore, device_id: &str) {
     guard.remove(device_id);
 }
 
+pub fn remove_connection_if_matches(
+    store: &BleDeviceStore,
+    device_id: &str,
+    command_lock: &Arc<tokio::sync::Mutex<()>>,
+) -> Option<Peripheral> {
+    let mut guard = store.connections.lock().unwrap();
+    let should_remove = guard
+        .get(device_id)
+        .is_some_and(|connection| Arc::ptr_eq(&connection.command_lock, command_lock));
+    should_remove
+        .then(|| guard.remove(device_id))
+        .flatten()
+        .map(|connection| connection.peripheral)
+}
+
 pub fn connection_lock(store: &BleDeviceStore, device_id: &str) -> Arc<tokio::sync::Mutex<()>> {
     let mut guard = store.connection_locks.lock().unwrap();
     guard
@@ -92,7 +109,12 @@ pub fn refresh_snapshots_with_connection_state(store: &BleDeviceStore) {
             .map(|(address, connection)| {
                 (
                     address.clone(),
-                    (connection.authenticated, connection.setup_complete, true),
+                    (
+                        connection.authenticated,
+                        connection.setup_complete,
+                        connection.auth_required,
+                        true,
+                    ),
                 )
             })
             .collect::<HashMap<_, _>>()
@@ -100,12 +122,16 @@ pub fn refresh_snapshots_with_connection_state(store: &BleDeviceStore) {
 
     let mut devices = store.devices.lock().unwrap();
     for device in &mut *devices {
-        if let Some((authenticated, setup_complete, connected)) = connection_state.get(&device.id) {
+        if let Some((authenticated, setup_complete, auth_required, connected)) =
+            connection_state.get(&device.id)
+        {
             device.setup_complete = device.setup_complete || *setup_complete;
             device.authenticated = *authenticated;
+            device.auth_required = *auth_required;
             device.connected = *connected;
         } else {
             device.authenticated = false;
+            device.auth_required = false;
             device.connected = false;
         }
     }
