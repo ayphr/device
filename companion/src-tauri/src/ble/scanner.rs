@@ -82,17 +82,22 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
                 let guard = store.connections.lock().unwrap();
                 guard.get(&peripheral_id).cloned()
             };
-            let (is_connected, is_authenticated, known_setup_complete) =
+            let (is_connected, is_authenticated, known_setup_complete, auth_required) =
                 if let Some(connection) = existing_connection {
                     match connection.peripheral.is_connected().await {
-                        Ok(true) => (true, connection.authenticated, connection.setup_complete),
+                        Ok(true) => (
+                            true,
+                            connection.authenticated,
+                            connection.setup_complete,
+                            connection.auth_required,
+                        ),
                         Ok(false) | Err(_) => {
                             super::state::remove_connection(&store, &peripheral_id);
-                            (false, false, setup_complete)
+                            (false, false, setup_complete, false)
                         }
                     }
                 } else {
-                    (false, false, setup_complete)
+                    (false, false, setup_complete, false)
                 };
 
             let effective_setup_complete = setup_complete || known_setup_complete;
@@ -116,6 +121,7 @@ pub async fn scan_ble_devices(app: AppHandle, store: BleDeviceStore) -> Result<(
                 model_id,
                 transport: "ble".to_string(),
                 setup_complete: effective_setup_complete,
+                auth_required,
                 rssi,
                 signal_strength,
                 connected,

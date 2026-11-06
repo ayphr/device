@@ -22,6 +22,7 @@ pub struct ActiveBleConnection {
     pub tx_characteristic: Characteristic,
     pub setup_complete: bool,
     pub authenticated: bool,
+    pub auth_required: bool,
     pub command_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
@@ -33,6 +34,7 @@ pub struct BleDeviceSnapshot {
     pub model_id: String,
     pub transport: String,
     pub setup_complete: bool,
+    pub auth_required: bool,
     pub address: String,
     pub rssi: Option<i16>,
     pub signal_strength: u8,
@@ -74,6 +76,21 @@ pub fn remove_live_peripheral(store: &BleDeviceStore, device_id: &str) {
 pub fn remove_connection(store: &BleDeviceStore, device_id: &str) {
     let mut guard = store.connections.lock().unwrap();
     guard.remove(device_id);
+}
+
+pub fn remove_connection_if_matches(
+    store: &BleDeviceStore,
+    device_id: &str,
+    command_lock: &Arc<tokio::sync::Mutex<()>>,
+) -> Option<Peripheral> {
+    let mut guard = store.connections.lock().unwrap();
+    let should_remove = guard
+        .get(device_id)
+        .is_some_and(|connection| Arc::ptr_eq(&connection.command_lock, command_lock));
+    should_remove
+        .then(|| guard.remove(device_id))
+        .flatten()
+        .map(|connection| connection.peripheral)
 }
 
 pub fn connection_lock(store: &BleDeviceStore, device_id: &str) -> Arc<tokio::sync::Mutex<()>> {

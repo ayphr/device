@@ -397,6 +397,7 @@ function App() {
 
   const openDevice = async (device: DeviceInfo) => {
     setSelectedDevice(device);
+    setConnectionError(null);
 
     if (!device.setupComplete) {
       setPage('setup');
@@ -438,11 +439,9 @@ function App() {
             : 'Could not reach the device. Make sure it is powered on and nearby, then try again.',
       );
 
-      if (device.authenticated) {
-        setPage('device');
-      } else {
-        setPage('auth');
-      }
+      // Authentication is only safe to request after a successful status
+      // response confirms that the device requires it.
+      setPage('home');
     }
   };
 
