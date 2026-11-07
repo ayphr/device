@@ -95,6 +95,14 @@ pub fn write_data(seq: u32, data: &[u8]) -> Result<(), &'static str> {
         return Err("OTA data chunk is empty");
     }
 
+    // Allow a retried chunk that was already processed to succeed without
+    // rewriting flash. This makes OTA resilient to a timed-out request whose
+    // response arrives late.
+    if seq == state.next_seq.wrapping_sub(1) {
+        info!("OTA chunk {} already processed; acknowledging retry", seq);
+        return Ok(());
+    }
+
     if seq != state.next_seq {
         warn!(
             "Rejecting OTA chunk with sequence {}; expected {}",
@@ -117,9 +125,14 @@ pub fn write_data(seq: u32, data: &[u8]) -> Result<(), &'static str> {
         .as_mut()
         .ok_or("OTA not initialized; send BEGIN first")?;
 
-    update
-        .write_all(data)
-        .map_err(|_| "Failed to write OTA data to flash")?;
+    for chunk in data.chunks(512) {
+        update
+            .write_all(chunk)
+            .map_err(|_| "Failed to write OTA data to flash")?;
+        // Yield to the BLE stack between writes so a long flash erase does not
+        // stall the connection and make the transfer look hung.
+        esp_idf_svc::hal::delay::FreeRtos::delay_ms(1);
+    }
 
     state.bytes_written += data.len();
     state.next_seq = state.next_seq.wrapping_add(1);

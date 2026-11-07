@@ -137,7 +137,7 @@ pub fn init(setup: Arc<DeviceSetup>) {
         }
 
         for response in responses {
-            info!("Sending BLE response bytes={}", response.len());
+            debug!("Sending BLE response bytes={}", response.len());
             notify_response(&tx_writer, &response);
         }
     });

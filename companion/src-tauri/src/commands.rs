@@ -458,18 +458,53 @@ impl<'a> OtaWriter<'a> {
         }
 
         let batch = std::mem::take(&mut self.pending);
-        for command in batch {
-            let response = self
-                .transport
-                .send_command_with_timeout(command, OTA_DATA_TIMEOUT)
-                .await
-                .map_err(|e| log_string_error("OTA data failed", e, self.label))?;
-            if response.first().copied() != Some(RESPONSE_OTA_DATA_OK) {
-                return Err(log_string_error(
-                    "OTA data rejected",
-                    "Device rejected OTA data chunk",
-                    self.label,
-                ));
+        let starting_seq = self.seq.saturating_sub(batch.len() as u32);
+        // Tell the UI which chunk is about to be written so a long flash erase
+        // does not look like the transfer is hung.
+        let _ = self.app.emit(
+            "firmware-update-progress",
+            FirmwareUpdateProgress {
+                step: "sending".into(),
+                progress: (starting_seq as f32 / self.total_chunks.max(1) as f32) * 100.0,
+                message: format!(
+                    "Writing firmware data... ({}/{})",
+                    starting_seq + 1,
+                    self.total_chunks
+                ),
+            },
+        );
+
+        for (index, command) in batch.into_iter().enumerate() {
+            let chunk_seq = starting_seq + index as u32 + 1;
+            let mut last_error = None;
+            for attempt in 1..=3 {
+                match self
+                    .transport
+                    .send_command_with_timeout(command.clone(), OTA_DATA_TIMEOUT)
+                    .await
+                {
+                    Ok(response) if response.first().copied() == Some(RESPONSE_OTA_DATA_OK) => {
+                        last_error = None;
+                        break;
+                    }
+                    Ok(_) => {
+                        last_error = Some(log_string_error(
+                            "OTA data rejected",
+                            "Device rejected OTA data chunk",
+                            self.label,
+                        ));
+                        break;
+                    }
+                    Err(error) => {
+                        last_error = Some(log_string_error("OTA data failed", error, self.label));
+                        if attempt < 3 {
+                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        }
+                    }
+                }
+            }
+            if let Some(error) = last_error {
+                return Err(error);
             }
         }
 
