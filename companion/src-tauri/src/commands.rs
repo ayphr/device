@@ -10,7 +10,7 @@ use ayphr_protocol::{
 };
 use tauri::{AppHandle, Emitter};
 
-use crate::constants::{OTA_BEGIN_TIMEOUT, OTA_DATA_TIMEOUT};
+use crate::constants::{OTA_BEGIN_TIMEOUT, OTA_DATA_TIMEOUT, OTA_END_TIMEOUT};
 use crate::protocol::{format_bytes, log_string_error};
 use crate::transport::Transport;
 use crate::types::{
@@ -540,7 +540,7 @@ impl<'a> OtaWriter<'a> {
 
         let response = self
             .transport
-            .send_command(vec![COMMAND_OTA_END])
+            .send_command_with_timeout(vec![COMMAND_OTA_END], OTA_END_TIMEOUT)
             .await
             .map_err(|e| log_string_error("OTA end failed", e, self.label))?;
         if response.first().copied() != Some(RESPONSE_OTA_END_OK) {
