@@ -150,44 +150,56 @@ pub fn write_data(seq: u32, data: &[u8]) -> Result<(), &'static str> {
 }
 
 pub fn end() -> Result<(), &'static str> {
-    let mut state = lock_ota_state()?;
+    // Signature verification needs more stack than the BLE host task provides.
+    // Run the whole finalization step on a thread with a generous stack to avoid
+    // a stack protection fault during verification.
+    let handle = std::thread::Builder::new()
+        .stack_size(128 * 1024)
+        .spawn(|| {
+            let mut state = lock_ota_state()?;
 
-    if state.update.is_none() {
-        return Err("OTA not initialized; send BEGIN first");
-    }
+            if state.update.is_none() {
+                return Err("OTA not initialized; send BEGIN first");
+            }
 
-    if state.bytes_written < state.total_size {
-        state.update = None;
-        state.hasher = None;
-        return Err("OTA incomplete: fewer bytes received than declared size");
-    }
+            if state.bytes_written < state.total_size {
+                state.update = None;
+                state.hasher = None;
+                return Err("OTA incomplete: fewer bytes received than declared size");
+            }
 
-    let digest = state
-        .hasher
-        .take()
-        .ok_or("OTA session has no active hasher")?
-        .finalize();
-    if !verify_firmware_digest_signature(&digest, &state.signature) {
-        state.update = None;
-        warn!("OTA image signature verification failed; aborting update");
-        return Err("OTA image signature verification failed");
-    }
+            let digest = state
+                .hasher
+                .take()
+                .ok_or("OTA session has no active hasher")?
+                .finalize();
+            if !verify_firmware_digest_signature(&digest, &state.signature) {
+                state.update = None;
+                warn!("OTA image signature verification failed; aborting update");
+                return Err("OTA image signature verification failed");
+            }
 
-    let update = state
-        .update
-        .take()
-        .ok_or("OTA not initialized; send BEGIN first")?;
+            let update = state
+                .update
+                .take()
+                .ok_or("OTA not initialized; send BEGIN first")?;
 
-    update
-        .complete()
-        .map_err(|_| "OTA image validation failed")?;
+            update
+                .complete()
+                .map_err(|_| "OTA image validation failed")?;
 
-    info!(
-        "OTA update complete ({} bytes written, signature verified), rebooting...",
-        state.bytes_written
-    );
-    crate::command_processor::schedule_restart();
-    Ok(())
+            info!(
+                "OTA update complete ({} bytes written, signature verified), rebooting...",
+                state.bytes_written
+            );
+            crate::command_processor::schedule_restart();
+            Ok(())
+        })
+        .map_err(|_| "Failed to start OTA finalization thread")?;
+
+    handle
+        .join()
+        .map_err(|_| "OTA finalization thread panicked")?
 }
 
 pub fn mark_valid() {
