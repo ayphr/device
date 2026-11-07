@@ -1,11 +1,12 @@
 use ayphr_protocol::{
     append_field, verify_firmware_digest_signature, verify_firmware_signature, FirmwareHasher,
-    COMMAND_APPLY_SETUP, COMMAND_CHANGE_PASSWORD, COMMAND_FACTORY_RESET, COMMAND_OTA_BEGIN,
-    COMMAND_OTA_DATA, COMMAND_OTA_END, COMMAND_OTA_ROLLBACK, COMMAND_RENAME_DEVICE,
-    COMMAND_RESTART, COMMAND_UPDATE_WIFI, FIRMWARE_SIGNATURE_LEN, MAX_DEVICE_NAME_LEN,
-    RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_FACTORY_RESET_OK, RESPONSE_OTA_BEGIN_OK,
-    RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RENAME_OK,
-    RESPONSE_RESTART_OK, RESPONSE_SETUP_OK, RESPONSE_UPDATE_WIFI_OK,
+    COMMAND_APPLY_SETUP, COMMAND_CHANGE_PASSWORD, COMMAND_FACTORY_RESET,
+    COMMAND_GET_DEVICE_IDENTITY, COMMAND_OTA_BEGIN, COMMAND_OTA_DATA, COMMAND_OTA_END,
+    COMMAND_OTA_ROLLBACK, COMMAND_RENAME_DEVICE, COMMAND_RESTART, COMMAND_STORE_CLOUD_TOKEN,
+    COMMAND_UPDATE_WIFI, FIRMWARE_SIGNATURE_LEN, MAX_DEVICE_NAME_LEN, RESPONSE_CHANGE_PASSWORD_OK,
+    RESPONSE_FACTORY_RESET_OK, RESPONSE_OTA_BEGIN_OK, RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK,
+    RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RENAME_OK, RESPONSE_RESTART_OK, RESPONSE_SETUP_OK,
+    RESPONSE_UPDATE_WIFI_OK,
 };
 use tauri::{AppHandle, Emitter};
 
@@ -13,8 +14,8 @@ use crate::constants::OTA_BEGIN_TIMEOUT;
 use crate::protocol::{format_bytes, log_string_error};
 use crate::transport::Transport;
 use crate::types::{
-    BleConnectionState, CloudLinkResult, DeviceSettingsResult, FirmwareInfoResult,
-    FirmwareUpdateProgress, LiveDataResult, ParsedStatus,
+    BleConnectionState, CloudLinkResult, DeviceIdentityResult, DeviceSettingsResult,
+    FirmwareInfoResult, FirmwareUpdateProgress, LiveDataResult, ParsedStatus,
 };
 
 pub fn build_connection_state(status: &ParsedStatus) -> BleConnectionState {
@@ -251,6 +252,29 @@ pub async fn do_unlink_cloud(transport: &Transport) -> Result<(), String> {
         .unlink_cloud()
         .await
         .map_err(|e| log_string_error("cloud unlink failed", e, "shared"))
+}
+
+pub async fn do_get_device_identity(transport: &Transport) -> Result<DeviceIdentityResult, String> {
+    let response = transport
+        .send_command(vec![COMMAND_GET_DEVICE_IDENTITY])
+        .await
+        .map_err(|e| log_string_error("device identity query failed", e, "shared"))?;
+    crate::protocol::parse_device_identity_response(&response)
+}
+
+pub async fn do_store_cloud_token(
+    transport: &Transport,
+    token: &str,
+) -> Result<CloudLinkResult, String> {
+    let mut command = vec![COMMAND_STORE_CLOUD_TOKEN];
+    append_field(&mut command, token)
+        .map_err(|e| log_string_error("cloud token encoding failed", e, "shared"))?;
+
+    let response = transport
+        .send_command(command)
+        .await
+        .map_err(|e| log_string_error("cloud token store failed", e, "shared"))?;
+    crate::protocol::parse_cloud_link_response(&response)
 }
 
 pub async fn do_get_firmware_info(transport: &Transport) -> Result<FirmwareInfoResult, String> {
@@ -745,6 +769,88 @@ pub async fn fetch_firmware_release_metadata(
         let metadata: crate::types::FirmwareReleaseMetadata = serde_json::from_slice(&bytes)
             .map_err(|error| format!("Failed to parse release metadata: {error}"))?;
         Ok(metadata)
+    })
+    .await
+    .map_err(|error| format!("Task join error: {error}"))?
+}
+
+#[tauri::command]
+pub async fn request_cloud_pairing_code(
+    serial: u32,
+    name: String,
+) -> Result<crate::types::CloudPairingCodeResult, String> {
+    tokio::task::spawn_blocking(move || {
+        let agent = ureq::Agent::new_with_config(
+            ureq::config::Config::builder()
+                .timeout_global(Some(std::time::Duration::from_secs(20)))
+                .build(),
+        );
+        let body = serde_json::to_string(&serde_json::json!({
+            "serial": serial,
+            "name": name,
+        }))
+        .map_err(|error| format!("Failed to encode pairing request: {error}"))?;
+        let response = agent
+            .post("https://api.ayphr.com/api/devices/pair")
+            .header("content-type", "application/json")
+            .send(&body)
+            .map_err(|error| format!("Failed to request cloud pairing code: {error}"))?;
+        let status = response.status().as_u16();
+        if !(200..300).contains(&status) {
+            return Err(format!("Cloud pairing request failed (HTTP {status})"));
+        }
+        let bytes = response
+            .into_body()
+            .read_to_vec()
+            .map_err(|error| format!("Failed to read pairing response: {error}"))?;
+        let parsed: serde_json::Value = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("Failed to parse pairing response: {error}"))?;
+        let code = parsed
+            .get("code")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| "Cloud did not return a pairing code".to_string())?
+            .to_string();
+        let expires_at = parsed
+            .get("expiresAt")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        Ok(crate::types::CloudPairingCodeResult {
+            code,
+            expires_at,
+            expires_in_secs: 0,
+        })
+    })
+    .await
+    .map_err(|error| format!("Task join error: {error}"))?
+}
+
+#[tauri::command]
+pub async fn poll_cloud_pairing(code: String) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        let agent = ureq::Agent::new_with_config(
+            ureq::config::Config::builder()
+                .timeout_global(Some(std::time::Duration::from_secs(20)))
+                .build(),
+        );
+        let url = format!("https://api.ayphr.com/api/devices/pair/{}", code);
+        match agent.get(&url).call() {
+            Ok(response) => {
+                let bytes = response
+                    .into_body()
+                    .read_to_vec()
+                    .map_err(|error| format!("Failed to read pairing status: {error}"))?;
+                let parsed: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|error| format!("Failed to parse pairing status: {error}"))?;
+                Ok(parsed
+                    .get("token")
+                    .and_then(|value| value.as_str())
+                    .map(String::from))
+            }
+            Err(ureq::Error::StatusCode(404)) => Ok(None),
+            Err(error) => Err(format!("Cloud pairing status request failed: {error}")),
+        }
     })
     .await
     .map_err(|error| format!("Task join error: {error}"))?

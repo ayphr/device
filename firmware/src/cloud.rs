@@ -246,6 +246,12 @@ pub fn reset() {
     set_status(LinkStatus::Unlinked);
 }
 
+pub fn link_with_token(setup: &DeviceSetup, token: &str) -> Result<(), String> {
+    store_token(setup, token)?;
+    set_status(LinkStatus::Linked);
+    Ok(())
+}
+
 fn store_token(setup: &DeviceSetup, token: &str) -> Result<(), String> {
     let mut new_data = setup.lock_state().data.clone();
     new_data.cloud_token = token.to_string();

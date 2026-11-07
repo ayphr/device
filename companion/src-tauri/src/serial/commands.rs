@@ -282,6 +282,23 @@ pub async fn unlink_cloud_serial(device_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn get_device_identity_serial(
+    device_id: String,
+) -> Result<crate::types::DeviceIdentityResult, String> {
+    let transport = Transport::Serial(device_id);
+    commands::do_get_device_identity(&transport).await
+}
+
+#[tauri::command]
+pub async fn store_cloud_token_serial(
+    device_id: String,
+    token: String,
+) -> Result<crate::types::CloudLinkResult, String> {
+    let transport = Transport::Serial(device_id);
+    commands::do_store_cloud_token(&transport, &token).await
+}
+
+#[tauri::command]
 pub async fn update_firmware_serial(
     device_id: String,
     firmware_path: String,

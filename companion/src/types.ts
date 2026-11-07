@@ -51,3 +51,14 @@ export interface CloudLinkResult {
   expiresInSecs: number;
   message: string | null;
 }
+
+export interface DeviceIdentityResult {
+  serial: number;
+  name: string;
+}
+
+export interface CloudPairingCodeResult {
+  code: string;
+  expiresAt: string;
+  expiresInSecs: number;
+}

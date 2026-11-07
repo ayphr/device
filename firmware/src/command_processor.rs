@@ -1,17 +1,19 @@
 use ayphr_protocol::{
-    intervals_valid, read_field, verify_password, COMMAND_APPLY_SETUP, COMMAND_AUTHENTICATE,
-    COMMAND_CHANGE_PASSWORD, COMMAND_CLOUD_LINK_START, COMMAND_CLOUD_LINK_STATUS,
-    COMMAND_CLOUD_UNLINK, COMMAND_FACTORY_RESET, COMMAND_GET_DEVICE_SETTINGS,
-    COMMAND_GET_FIRMWARE_INFO, COMMAND_GET_LIVE_DATA, COMMAND_GET_STATUS, COMMAND_OTA_BEGIN,
-    COMMAND_OTA_DATA, COMMAND_OTA_END, COMMAND_OTA_ROLLBACK, COMMAND_RENAME_DEVICE,
-    COMMAND_RESTART, COMMAND_UPDATE_DEVICE_SETTINGS, COMMAND_UPDATE_WIFI,
+    append_field, intervals_valid, read_field, verify_password, COMMAND_APPLY_SETUP,
+    COMMAND_AUTHENTICATE, COMMAND_CHANGE_PASSWORD, COMMAND_CLOUD_LINK_START,
+    COMMAND_CLOUD_LINK_STATUS, COMMAND_CLOUD_UNLINK, COMMAND_FACTORY_RESET,
+    COMMAND_GET_DEVICE_IDENTITY, COMMAND_GET_DEVICE_SETTINGS, COMMAND_GET_FIRMWARE_INFO,
+    COMMAND_GET_LIVE_DATA, COMMAND_GET_STATUS, COMMAND_OTA_BEGIN, COMMAND_OTA_DATA,
+    COMMAND_OTA_END, COMMAND_OTA_ROLLBACK, COMMAND_RENAME_DEVICE, COMMAND_RESTART,
+    COMMAND_STORE_CLOUD_TOKEN, COMMAND_UPDATE_DEVICE_SETTINGS, COMMAND_UPDATE_WIFI,
     DEFAULT_SAMPLING_INTERVAL_SECS, DEFAULT_UPLOAD_INTERVAL_SECS, FIRMWARE_SIGNATURE_LEN,
     MAX_DEVICE_NAME_LEN, RESPONSE_AUTH_FAILED, RESPONSE_AUTH_LOCKED, RESPONSE_AUTH_OK,
-    RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_CLOUD_UNLINK_OK, RESPONSE_DEVICE_SETTINGS,
-    RESPONSE_DEVICE_SETTINGS_OK, RESPONSE_ERROR, RESPONSE_FACTORY_RESET_OK, RESPONSE_FIRMWARE_INFO,
-    RESPONSE_LIVE_DATA, RESPONSE_OTA_BEGIN_OK, RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK,
-    RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RENAME_OK, RESPONSE_RESTART_OK, RESPONSE_SETUP_FAILED,
-    RESPONSE_SETUP_OK, RESPONSE_STATUS, RESPONSE_UPDATE_WIFI_OK,
+    RESPONSE_CHANGE_PASSWORD_OK, RESPONSE_CLOUD_UNLINK_OK, RESPONSE_DEVICE_IDENTITY,
+    RESPONSE_DEVICE_SETTINGS, RESPONSE_DEVICE_SETTINGS_OK, RESPONSE_ERROR,
+    RESPONSE_FACTORY_RESET_OK, RESPONSE_FIRMWARE_INFO, RESPONSE_LIVE_DATA, RESPONSE_OTA_BEGIN_OK,
+    RESPONSE_OTA_DATA_OK, RESPONSE_OTA_END_OK, RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RENAME_OK,
+    RESPONSE_RESTART_OK, RESPONSE_SETUP_FAILED, RESPONSE_SETUP_OK, RESPONSE_STATUS,
+    RESPONSE_UPDATE_WIFI_OK,
 };
 use log::{info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -75,6 +77,10 @@ fn process_request(setup: &Arc<DeviceSetup>, data: &[u8], bypass_auth: bool) -> 
         COMMAND_CLOUD_LINK_START => handle_cloud_link_start(setup, bypass_auth),
         COMMAND_CLOUD_LINK_STATUS => handle_cloud_link_status(setup, bypass_auth),
         COMMAND_CLOUD_UNLINK => handle_cloud_unlink(setup, bypass_auth),
+        COMMAND_GET_DEVICE_IDENTITY => handle_get_device_identity(setup, bypass_auth),
+        COMMAND_STORE_CLOUD_TOKEN => {
+            handle_store_cloud_token(setup, data, &mut cursor, bypass_auth)
+        }
         COMMAND_RENAME_DEVICE => handle_rename_device(setup, data, &mut cursor, bypass_auth),
         COMMAND_OTA_BEGIN => handle_ota_begin(setup, data, &mut cursor, bypass_auth),
         COMMAND_OTA_DATA => handle_ota_data(setup, data, &mut cursor, bypass_auth),
@@ -593,6 +599,42 @@ fn handle_cloud_unlink(setup: &Arc<DeviceSetup>, bypass_auth: bool) -> Vec<u8> {
 
     match crate::cloud::unlink(setup) {
         Ok(()) => vec![RESPONSE_CLOUD_UNLINK_OK],
+        Err(_) => vec![RESPONSE_ERROR],
+    }
+}
+
+fn handle_get_device_identity(setup: &DeviceSetup, bypass_auth: bool) -> Vec<u8> {
+    if let Some(response) = check_auth(setup, bypass_auth) {
+        return response;
+    }
+
+    let serial = crate::identity::serial();
+    let name = setup.lock_state().data.device_name.clone();
+
+    let mut response = Vec::with_capacity(5 + name.len() + 1);
+    response.push(RESPONSE_DEVICE_IDENTITY);
+    response.extend_from_slice(&serial.to_le_bytes());
+    let _ = append_field(&mut response, &name);
+    response
+}
+
+fn handle_store_cloud_token(
+    setup: &Arc<DeviceSetup>,
+    data: &[u8],
+    cursor: &mut usize,
+    bypass_auth: bool,
+) -> Vec<u8> {
+    if let Some(response) = check_auth(setup, bypass_auth) {
+        return response;
+    }
+
+    let token = match read_field(data, cursor) {
+        Some(value) if !value.is_empty() => value,
+        _ => return vec![RESPONSE_ERROR],
+    };
+
+    match crate::cloud::link_with_token(setup, &token) {
+        Ok(()) => crate::cloud::status_response(setup),
         Err(_) => vec![RESPONSE_ERROR],
     }
 }

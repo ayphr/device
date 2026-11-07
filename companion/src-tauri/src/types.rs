@@ -78,3 +78,18 @@ pub struct CloudLinkResult {
     pub expires_in_secs: u32,
     pub message: Option<String>,
 }
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceIdentityResult {
+    pub serial: u32,
+    pub name: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudPairingCodeResult {
+    pub code: String,
+    pub expires_at: String,
+    pub expires_in_secs: u32,
+}

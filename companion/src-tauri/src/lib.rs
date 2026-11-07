@@ -9,19 +9,20 @@ mod types;
 use ble::{
     authenticate_ble_device, change_ble_device_password, connect_ble_device, disconnect_ble_device,
     download_and_update_firmware_ble, factory_reset_ble_device, get_ble_devices,
-    get_cloud_link_status_ble, get_device_settings_ble, get_firmware_info_ble, get_live_data_ble,
-    ota_rollback_ble, rename_ble_device, restart_ble_device, scan_ble_devices,
-    start_cloud_link_ble, submit_ble_setup, unlink_cloud_ble, update_ble_device_wifi,
-    update_device_settings_ble, update_firmware_ble, BleDeviceStore,
+    get_cloud_link_status_ble, get_device_identity_ble, get_device_settings_ble,
+    get_firmware_info_ble, get_live_data_ble, ota_rollback_ble, rename_ble_device,
+    restart_ble_device, scan_ble_devices, start_cloud_link_ble, store_cloud_token_ble,
+    submit_ble_setup, unlink_cloud_ble, update_ble_device_wifi, update_device_settings_ble,
+    update_firmware_ble, BleDeviceStore,
 };
 use serial::{
     authenticate_serial_device, change_serial_device_password, connect_serial_device,
     download_and_update_firmware_serial, factory_reset_serial_device, get_cloud_link_status_serial,
-    get_device_settings_serial, get_firmware_info_serial, get_live_data_serial, get_serial_devices,
-    ota_rollback_serial, rename_serial_device, restart_serial_device, scan_serial_devices,
-    start_cloud_link_serial, submit_serial_setup, unlink_cloud_serial,
-    update_device_settings_serial, update_firmware_serial, update_serial_device_wifi,
-    SerialDeviceStore,
+    get_device_identity_serial, get_device_settings_serial, get_firmware_info_serial,
+    get_live_data_serial, get_serial_devices, ota_rollback_serial, rename_serial_device,
+    restart_serial_device, scan_serial_devices, start_cloud_link_serial, store_cloud_token_serial,
+    submit_serial_setup, unlink_cloud_serial, update_device_settings_serial,
+    update_firmware_serial, update_serial_device_wifi, SerialDeviceStore,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::menu::{MenuBuilder, MenuItem};
@@ -176,6 +177,8 @@ pub fn run() {
             update_device_settings_ble,
             start_cloud_link_ble,
             get_cloud_link_status_ble,
+            get_device_identity_ble,
+            store_cloud_token_ble,
             unlink_cloud_ble,
             update_firmware_ble,
             download_and_update_firmware_ble,
@@ -194,12 +197,16 @@ pub fn run() {
             update_device_settings_serial,
             start_cloud_link_serial,
             get_cloud_link_status_serial,
+            get_device_identity_serial,
+            store_cloud_token_serial,
             unlink_cloud_serial,
             update_firmware_serial,
             download_and_update_firmware_serial,
             ota_rollback_serial,
             set_background_mode,
-            commands::fetch_firmware_release_metadata
+            commands::fetch_firmware_release_metadata,
+            commands::request_cloud_pairing_code,
+            commands::poll_cloud_pairing
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

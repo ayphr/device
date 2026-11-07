@@ -1,9 +1,11 @@
 use ayphr_protocol::{
-    unpack, SensorPacket, RESPONSE_CLOUD_LINK, RESPONSE_DEVICE_SETTINGS, RESPONSE_FIRMWARE_INFO,
-    RESPONSE_LIVE_DATA, RESPONSE_STATUS,
+    unpack, SensorPacket, RESPONSE_CLOUD_LINK, RESPONSE_DEVICE_IDENTITY, RESPONSE_DEVICE_SETTINGS,
+    RESPONSE_FIRMWARE_INFO, RESPONSE_LIVE_DATA, RESPONSE_STATUS,
 };
 
-use crate::types::{CloudLinkResult, DeviceSettingsResult, ParsedFirmwareInfo, ParsedStatus};
+use crate::types::{
+    CloudLinkResult, DeviceIdentityResult, DeviceSettingsResult, ParsedFirmwareInfo, ParsedStatus,
+};
 
 pub fn parse_status_response(payload: &[u8]) -> Result<ParsedStatus, String> {
     if payload.len() < 7 || payload[0] != RESPONSE_STATUS {
@@ -158,6 +160,29 @@ pub fn parse_cloud_link_response(payload: &[u8]) -> Result<CloudLinkResult, Stri
         expires_in_secs,
         message,
     })
+}
+
+pub fn parse_device_identity_response(payload: &[u8]) -> Result<DeviceIdentityResult, String> {
+    if payload.len() < 5 || payload[0] != RESPONSE_DEVICE_IDENTITY {
+        return Err("Invalid device identity response payload".to_string());
+    }
+
+    let serial = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
+    let mut cursor = 5usize;
+    // name is a length-prefixed field; read manually to tolerate empty names.
+    let name = if cursor < payload.len() {
+        let len = payload[cursor] as usize;
+        cursor += 1;
+        if cursor + len > payload.len() {
+            return Err("Device identity response truncated in name".to_string());
+        }
+        String::from_utf8(payload[cursor..cursor + len].to_vec())
+            .map_err(|error| format!("Invalid device name UTF-8: {error}"))?
+    } else {
+        String::new()
+    };
+
+    Ok(DeviceIdentityResult { serial, name })
 }
 
 fn read_string_field(payload: &[u8], cursor: &mut usize) -> Result<String, String> {

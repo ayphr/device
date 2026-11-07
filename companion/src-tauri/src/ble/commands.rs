@@ -375,6 +375,31 @@ pub async fn unlink_cloud_ble(
 }
 
 #[tauri::command]
+pub async fn get_device_identity_ble(
+    device_id: String,
+    store: State<'_, BleDeviceStore>,
+) -> Result<crate::types::DeviceIdentityResult, String> {
+    let connection = ensure_connected(device_id.clone(), &store)
+        .await
+        .map_err(|error| log_string_error("device identity connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_get_device_identity(&transport).await
+}
+
+#[tauri::command]
+pub async fn store_cloud_token_ble(
+    device_id: String,
+    token: String,
+    store: State<'_, BleDeviceStore>,
+) -> Result<crate::types::CloudLinkResult, String> {
+    let connection = ensure_connected(device_id.clone(), &store)
+        .await
+        .map_err(|error| log_string_error("cloud token connect failed", error, "ble"))?;
+    let transport = Transport::Ble(connection);
+    commands::do_store_cloud_token(&transport, &token).await
+}
+
+#[tauri::command]
 pub async fn update_firmware_ble(
     device_id: String,
     firmware_path: String,
