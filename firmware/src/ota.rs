@@ -129,9 +129,6 @@ pub fn write_data(seq: u32, data: &[u8]) -> Result<(), &'static str> {
         update
             .write_all(chunk)
             .map_err(|_| "Failed to write OTA data to flash")?;
-        // Yield to the BLE stack between writes so a long flash erase does not
-        // stall the connection and make the transfer look hung.
-        esp_idf_svc::hal::delay::FreeRtos::delay_ms(1);
     }
 
     state.bytes_written += data.len();

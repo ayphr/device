@@ -206,7 +206,8 @@ pub fn run() {
             set_background_mode,
             commands::fetch_firmware_release_metadata,
             commands::request_cloud_pairing_code,
-            commands::poll_cloud_pairing
+            commands::poll_cloud_pairing,
+            commands::cancel_firmware_update
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

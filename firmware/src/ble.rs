@@ -65,6 +65,8 @@ pub fn refresh_advertising(setup: &DeviceSetup) {
 
 pub fn init(setup: Arc<DeviceSetup>) {
     let ble_device = BLEDevice::take();
+    // Use a larger ATT MTU to reduce the number of BLE writes per OTA chunk.
+    let _ = ble_device.set_preferred_mtu(512);
     let ble_advertising = ble_device.get_advertising();
     let server = ble_device.get_server();
 
@@ -74,7 +76,7 @@ pub fn init(setup: Arc<DeviceSetup>) {
         let handle = desc.conn_handle();
         // Give long flash erases time to complete without dropping the BLE
         // connection during a firmware update.
-        if let Err(error) = server.update_conn_params(handle, 6, 12, 0, 2000) {
+        if let Err(error) = server.update_conn_params(handle, 6, 6, 0, 2000) {
             warn!("Failed to update BLE connection params: {:?}", error);
         }
     });

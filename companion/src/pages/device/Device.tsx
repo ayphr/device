@@ -841,6 +841,12 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
                   style={{ width: `${firmwareProgress.progress}%` }}
                 />
               </div>
+              <Button
+                variant="secondary"
+                onClick={() => void invoke('cancel_firmware_update')}
+              >
+                Cancel update
+              </Button>
               <div className={styles['device-page__progress-steps']}>
                 <span className={`${styles['device-page__step']} ${firmwareProgress.step === 'preparing' || firmwareProgress.step === 'sending' || firmwareProgress.step === 'verifying' || firmwareProgress.step === 'complete' ? styles['device-page__step--done'] : ''}`}>
                   Preparing

@@ -8,6 +8,7 @@ use ayphr_protocol::{
     RESPONSE_OTA_ROLLBACK_OK, RESPONSE_RENAME_OK, RESPONSE_RESTART_OK, RESPONSE_SETUP_OK,
     RESPONSE_UPDATE_WIFI_OK,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter};
 
 use crate::constants::{OTA_BEGIN_TIMEOUT, OTA_DATA_TIMEOUT, OTA_END_TIMEOUT};
@@ -17,6 +18,8 @@ use crate::types::{
     BleConnectionState, CloudLinkResult, DeviceIdentityResult, DeviceSettingsResult,
     FirmwareInfoResult, FirmwareUpdateProgress, LiveDataResult, ParsedStatus,
 };
+
+static OTA_CANCELLED: AtomicBool = AtomicBool::new(false);
 
 pub fn build_connection_state(status: &ParsedStatus) -> BleConnectionState {
     BleConnectionState {
@@ -425,6 +428,9 @@ impl<'a> OtaWriter<'a> {
 
     async fn feed(&mut self, mut data: &[u8]) -> Result<(), String> {
         while !data.is_empty() {
+            if OTA_CANCELLED.load(Ordering::Relaxed) {
+                return Err("Firmware update canceled".to_string());
+            }
             let take = (self.chunk_size - self.buffered.len()).min(data.len());
             self.buffered.extend_from_slice(&data[..take]);
             data = &data[take..];
@@ -475,6 +481,9 @@ impl<'a> OtaWriter<'a> {
         );
 
         for (index, command) in batch.into_iter().enumerate() {
+            if OTA_CANCELLED.load(Ordering::Relaxed) {
+                return Err("Firmware update canceled".to_string());
+            }
             let chunk_seq = starting_seq + index as u32 + 1;
             let mut last_error = None;
             for attempt in 1..=3 {
@@ -622,6 +631,7 @@ pub async fn do_update_firmware(
         ));
     }
 
+    OTA_CANCELLED.store(false, Ordering::SeqCst);
     emit_preparing(app);
 
     let mut writer = OtaWriter::new(transport, app, label, chunk_size, total_size);
@@ -751,6 +761,7 @@ pub async fn do_download_and_update_firmware(
     };
 
     tracing::info!("[{}] streaming firmware: {} bytes", label, total_size);
+    OTA_CANCELLED.store(false, Ordering::SeqCst);
     emit_preparing(app);
 
     let mut writer = OtaWriter::new(transport, app, label, chunk_size, total_size);
@@ -918,6 +929,11 @@ pub async fn poll_cloud_pairing(code: String) -> Result<Option<String>, String> 
     })
     .await
     .map_err(|error| format!("Task join error: {error}"))?
+}
+
+#[tauri::command]
+pub fn cancel_firmware_update() {
+    OTA_CANCELLED.store(true, Ordering::SeqCst);
 }
 
 #[cfg(test)]
