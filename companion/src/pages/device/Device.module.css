@@ -172,6 +172,49 @@
   font-weight: 600;
 }
 
+.device-page__panel-intro {
+  margin: -0.45rem 0 1rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.device-page__panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.device-page__panel-heading h2 {
+  margin-bottom: 0.35rem;
+}
+
+.device-page__panel-heading .device-page__panel-intro {
+  margin-bottom: 0;
+}
+
+.device-page__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: none;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--status-success) 30%, var(--border-subtle));
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.device-page__status-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--status-success);
+  box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--status-success) 15%, transparent);
+}
+
 .device-page__definition-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -245,6 +288,28 @@
 
 .device-page__setting-row p {
   margin-top: 0.2rem;
+}
+
+.device-page__number-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: none;
+  min-width: 10rem;
+}
+
+.device-page__number-control span {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.device-page__current-settings,
+.device-page__modal-help {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
 }
 
 .device-page__setting-value {
@@ -373,6 +438,22 @@
   margin: 0;
 }
 
+.device-page__success {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--status-success) 40%, var(--border-subtle));
+  border-radius: 0.95rem;
+  background: color-mix(in srgb, var(--status-success) 8%, var(--bg-surface));
+}
+
+.device-page__success p {
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  margin: 0;
+}
+
 @media (max-width: 1024px) {
   .device-page__shell {
     display: block;
@@ -428,5 +509,13 @@
 
   .device-page__setting-row {
     flex-direction: column;
+  }
+
+  .device-page__panel-heading {
+    flex-direction: column;
+  }
+
+  .device-page__number-control {
+    width: 100%;
   }
 }

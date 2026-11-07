@@ -53,9 +53,9 @@ type DeviceSection = 'general' | 'updates' | 'live' | 'cloud' | 'info';
 const sections: Array<{ id: DeviceSection; label: string; icon: ComponentType<{ size?: number }> }> = [
   { id: 'general', label: 'General', icon: IconSettings },
   { id: 'updates', label: 'Updates', icon: IconCloudDownload },
-  { id: 'live', label: 'Live Data', icon: IconActivity },
-  { id: 'cloud', label: 'Cloud & Sync', icon: IconCloud },
-  { id: 'info', label: 'Info', icon: IconInfoCircle },
+  { id: 'live', label: 'Live readings', icon: IconActivity },
+  { id: 'cloud', label: 'Cloud sync', icon: IconCloud },
+  { id: 'info', label: 'Device info', icon: IconInfoCircle },
 ];
 
 const MAX_DEVICE_NAME_LENGTH = 64;
@@ -79,6 +79,7 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [controlError, setControlError] = useState<string | null>(null);
+  const [controlSuccess, setControlSuccess] = useState<string | null>(null);
 
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [renameValue, setRenameValue] = useState(device.name);
@@ -245,10 +246,12 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
   const handleRestart = async () => {
     setIsRestarting(true);
     setControlError(null);
+    setControlSuccess(null);
     try {
       await invoke(device.transport === 'serial' ? 'restart_serial_device' : 'restart_ble_device', {
         deviceId: device.id,
       });
+      setControlSuccess('Restart command sent. The device may briefly disconnect.');
     } catch (error) {
       console.error('Failed to restart device:', error);
       setControlError(typeof error === 'string' ? error : 'Failed to restart the device');
@@ -272,12 +275,14 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
 
     setIsRenaming(true);
     setRenameError(null);
+    setControlSuccess(null);
 
     try {
       const command = device.transport === 'serial' ? 'rename_serial_device' : 'rename_ble_device';
       await invoke(command, { deviceId: device.id, name: trimmedName });
 
       onDeviceUpdated?.({ ...device, name: trimmedName });
+      setControlSuccess('Device name updated.');
       setIsRenameModalOpen(false);
       setRenameValue(trimmedName);
     } catch (error) {
@@ -290,6 +295,7 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
   const handleFactoryReset = async () => {
     setIsResetting(true);
     setControlError(null);
+    setControlSuccess(null);
     try {
       await invoke(device.transport === 'serial' ? 'factory_reset_serial_device' : 'factory_reset_ble_device', {
         deviceId: device.id,
@@ -305,20 +311,23 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
   };
 
   const handleChangePassword = async () => {
-    if (device.authRequired === false) return;
-
     if (newPassword.length < 8) {
       setPasswordError('New password must be at least 8 characters');
       throw new Error('New password must be at least 8 characters');
     }
     setIsChangingPassword(true);
     setPasswordError(null);
+    setControlSuccess(null);
     try {
       await invoke(device.transport === 'serial' ? 'change_serial_device_password' : 'change_ble_device_password', {
         deviceId: device.id,
-        currentPassword,
+        currentPassword: device.authRequired === false ? '' : currentPassword,
         newPassword,
       });
+      if (device.authRequired === false) {
+        onDeviceUpdated?.({ ...device, authRequired: true });
+      }
+      setControlSuccess(device.authRequired === false ? 'Password set. Authentication is now enabled.' : 'Password updated.');
       setIsPasswordModalOpen(false);
       setCurrentPassword('');
       setNewPassword('');
@@ -337,6 +346,7 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
     }
     setIsUpdatingWifi(true);
     setWifiError(null);
+    setControlSuccess(null);
     try {
       await invoke(device.transport === 'serial' ? 'update_serial_device_wifi' : 'update_ble_device_wifi', {
         deviceId: device.id,
@@ -346,6 +356,7 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
       setIsWifiModalOpen(false);
       setWifiSsid('');
       setWifiPassword('');
+      setControlSuccess('Wi-Fi settings updated.');
     } catch (error) {
       setWifiError(typeof error === 'string' ? error : 'Failed to update Wi-Fi');
       throw error;
@@ -572,7 +583,7 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
   const generalSection = (
     <div className={styles['device-page__stacked-grid']}>
       <article className={styles['device-page__panel']}>
-        <h2>System Controls</h2>
+        <h2>Device controls</h2>
         <div className={styles['device-page__control-list']}>
           <Button
             variant="secondary"
@@ -593,16 +604,18 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
             <IconWifi size={16} />
             Update Wi-Fi
           </Button>
-          {device.authRequired === false ? (
-            <p style={{ margin: 0, color: 'var(--color-warning)' }}>
-              Authentication is disabled for this device, so password controls are hidden.
-            </p>
-          ) : (
-            <Button variant="secondary" onClick={() => setIsPasswordModalOpen(true)}>
-              <IconLock size={16} />
-              Change password
-            </Button>
-          )}
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setCurrentPassword('');
+              setNewPassword('');
+              setPasswordError(null);
+              setIsPasswordModalOpen(true);
+            }}
+          >
+            <IconLock size={16} />
+            {device.authRequired === false ? 'Set password' : 'Change password'}
+          </Button>
           <Button variant="danger" onClick={() => setIsResetDialogOpen(true)}>
             <IconTrash size={16} />
             Factory reset
@@ -611,6 +624,14 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
             <div className={styles['device-page__update-error']}>
               <p>{controlError}</p>
               <Button variant="secondary" onClick={() => setControlError(null)}>
+                Dismiss
+              </Button>
+            </div>
+          )}
+          {controlSuccess && (
+            <div className={styles['device-page__success']} role="status">
+              <p>{controlSuccess}</p>
+              <Button variant="secondary" onClick={() => setControlSuccess(null)}>
                 Dismiss
               </Button>
             </div>
@@ -654,27 +675,34 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
 
       <Modal
         isOpen={isPasswordModalOpen}
-        title="Change Device Password"
+        title={device.authRequired === false ? 'Set device password' : 'Change device password'}
         onClose={() => setIsPasswordModalOpen(false)}
         onConfirm={handleChangePassword}
         isLoading={isChangingPassword}
-        confirmText="Update password"
+        confirmText={device.authRequired === false ? 'Set password' : 'Update password'}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <Input
-            label="Current password"
-            type="password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            placeholder="Enter current password"
-          />
+          {device.authRequired !== false && (
+            <Input
+              label="Current password"
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="Enter current password"
+            />
+          )}
           <Input
             label="New password"
             type="password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="Enter new password (min 8 chars)"
+            placeholder="At least 8 characters"
           />
+          {device.authRequired === false && (
+            <p className={styles['device-page__modal-help']}>
+              Authentication is currently off. Setting a password will turn it on for this device.
+            </p>
+          )}
           {passwordError && (
             <p style={{ color: 'var(--color-error)', fontSize: '0.875rem' }}>{passwordError}</p>
           )}
@@ -845,16 +873,19 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
     <div className={styles['device-page__stacked-grid']}>
       <article className={styles['device-page__panel']}>
         <h2>Data collection</h2>
+        <p className={styles['device-page__panel-intro']}>
+          Choose how often this device records readings and sends them to Ayphr Cloud.
+        </p>
         <div className={styles['device-page__setting-list']}>
           <div className={styles['device-page__setting-row']}>
             <div>
               <h3>Sampling interval</h3>
               <p>
-                How often the device takes a reading ({MIN_SAMPLING_INTERVAL_SECS} second to{' '}
-                {formatInterval(MAX_SAMPLING_INTERVAL_SECS)})
+                Record one reading every {MIN_SAMPLING_INTERVAL_SECS} second to{' '}
+                {formatInterval(MAX_SAMPLING_INTERVAL_SECS)}.
               </p>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div className={styles['device-page__number-control']}>
               <Input
                 type="number"
                 value={samplingInput}
@@ -862,7 +893,7 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
                 min={MIN_SAMPLING_INTERVAL_SECS}
                 max={MAX_SAMPLING_INTERVAL_SECS}
               />
-              <span>sec</span>
+              <span>seconds</span>
             </div>
           </div>
 
@@ -870,11 +901,11 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
             <div>
               <h3>Upload interval</h3>
               <p>
-                How often buffered readings are uploaded to Ayphr Cloud (1 minute to 6 hours). Must be at
-                least as long as the sampling interval.
+                Send buffered readings to Ayphr Cloud every {formatInterval(MIN_UPLOAD_INTERVAL_SECS)} to{' '}
+                {formatInterval(MAX_UPLOAD_INTERVAL_SECS)}. This must be at least as long as the sampling interval.
               </p>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div className={styles['device-page__number-control']}>
               <Input
                 type="number"
                 value={uploadInput}
@@ -882,17 +913,17 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
                 min={MIN_UPLOAD_INTERVAL_SECS}
                 max={MAX_UPLOAD_INTERVAL_SECS}
               />
-              <span>sec</span>
+              <span>seconds</span>
             </div>
           </div>
 
           <div className={styles['device-page__setting-row']}>
             <div>
-              <h3>Save settings</h3>
-              <p>Apply the new collection intervals to this device</p>
+              <h3>Apply changes</h3>
+              <p>Save the new collection intervals on this device.</p>
             </div>
             <Button variant="secondary" onClick={handleSaveSettings} isLoading={isSavingSettings}>
-              Save
+              Save changes
             </Button>
           </div>
 
@@ -908,9 +939,9 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
             <p style={{ color: 'var(--color-success, #22c55e)', margin: 0 }}>{settingsSuccess}</p>
           )}
           {deviceSettings && (
-            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
-              Current: sampling {formatInterval(deviceSettings.samplingIntervalSecs)}, upload{' '}
-              {formatInterval(deviceSettings.uploadIntervalSecs)}
+            <p className={styles['device-page__current-settings']}>
+              Current schedule: record every {formatInterval(deviceSettings.samplingIntervalSecs)} and upload every{' '}
+              {formatInterval(deviceSettings.uploadIntervalSecs)}.
             </p>
           )}
         </div>
@@ -1015,9 +1046,20 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
   const liveDataSection = (
     <div className={styles['device-page__stacked-grid']}>
       <article className={styles['device-page__panel']}>
-        <h2>Live sensor data</h2>
+        <div className={styles['device-page__panel-heading']}>
+          <div>
+            <h2>Live readings</h2>
+            <p className={styles['device-page__panel-intro']}>Current values reported by the device.</p>
+          </div>
+          <span className={styles['device-page__status']} role="status">
+            <span className={styles['device-page__status-dot']} />
+            Updates every 2 seconds
+          </span>
+        </div>
         {liveDataError ? (
-          <p>{liveDataError}</p>
+          <div className={styles['device-page__update-error']} role="alert">
+            <p>{liveDataError}</p>
+          </div>
         ) : liveData ? (
           <div className={styles['device-page__metrics']}>
             <article className={styles['device-page__metric-card']}>
@@ -1047,7 +1089,6 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
         ) : (
           <p>No sensor data is available for this device yet.</p>
         )}
-        <p>Readings refresh automatically while this view is open.</p>
       </article>
     </div>
   );
@@ -1083,7 +1124,7 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
       </div>
 
       <article className={styles['device-page__panel']}>
-        <h2>Device Details</h2>
+        <h2>Device details</h2>
         <dl className={`${styles['device-page__definition-list']} ${styles['device-page__definition-list--wide']}`.trim()}>
           <div>
             <dt>Name</dt>
@@ -1129,7 +1170,10 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
       </article>
 
       <article className={styles['device-page__panel']}>
-        <h2>Advertisement Data</h2>
+        <h2>Bluetooth details</h2>
+        <p className={styles['device-page__panel-intro']}>
+          Technical information broadcast by the device for nearby connections.
+        </p>
         <dl className={`${styles['device-page__definition-list']} ${styles['device-page__definition-list--wide']}`.trim()}>
           <div>
             <dt>Manufacturer data</dt>
