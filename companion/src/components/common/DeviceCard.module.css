@@ -69,10 +69,14 @@
 .device-card__opening-spinner {
   width: 0.8rem;
   height: 0.8rem;
+  flex-shrink: 0;
   border: 2px solid color-mix(in srgb, var(--text-primary) 25%, transparent);
-  border-top-color: var(--status-success);
+  border-top-color: var(--text-primary);
   border-radius: 50%;
   animation: device-card-spin 0.8s linear infinite;
+  transform-origin: center;
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 @keyframes device-card-spin {

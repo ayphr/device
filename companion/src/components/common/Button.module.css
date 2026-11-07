@@ -79,14 +79,10 @@
   display: inline-block;
   width: 1rem;
   height: 1rem;
-  flex-shrink: 0;
-  border: 2px solid var(--text-muted-opaque);
+  border: 2px solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
-  transform-origin: center;
-  will-change: transform;
-  backface-visibility: hidden;
 }
 
 @keyframes spin {
