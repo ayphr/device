@@ -478,11 +478,40 @@ impl<'a> OtaWriter<'a> {
             let chunk_seq = starting_seq + index as u32 + 1;
             let mut last_error = None;
             for attempt in 1..=3 {
-                match self
+                let erasing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+                let app_handle = self.app.clone();
+                let total_chunks = self.total_chunks;
+                let erase_task = tokio::spawn({
+                    let erasing = erasing.clone();
+                    async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        if erasing.load(std::sync::atomic::Ordering::Relaxed) {
+                            let _ = app_handle.emit(
+                                "firmware-update-progress",
+                                FirmwareUpdateProgress {
+                                    step: "sending".into(),
+                                    progress: ((chunk_seq.saturating_sub(1)) as f32
+                                        / total_chunks.max(1) as f32)
+                                        * 100.0,
+                                    message: format!(
+                                        "Erasing flash... ({}/{})",
+                                        chunk_seq, total_chunks
+                                    ),
+                                },
+                            );
+                        }
+                    }
+                });
+
+                let result = self
                     .transport
                     .send_command_with_timeout(command.clone(), OTA_DATA_TIMEOUT)
-                    .await
-                {
+                    .await;
+
+                erasing.store(false, std::sync::atomic::Ordering::Relaxed);
+                let _ = erase_task.await;
+
+                match result {
                     Ok(response) if response.first().copied() == Some(RESPONSE_OTA_DATA_OK) => {
                         last_error = None;
                         break;
