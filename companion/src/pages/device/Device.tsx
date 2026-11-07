@@ -37,6 +37,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { listen } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
 import { compareVersions, normalizeFirmwareVersion } from '../../lib/version';
 import type { DeviceSettingsResult, FirmwareInfoResult, FirmwareReleaseMetadata, FirmwareUpdateProgress, LiveDataResult } from '../../types';
 import styles from './Device.module.css';
@@ -166,6 +167,22 @@ export default function DevicePage({ device, onBack, onDeviceUpdated, developerM
 
         if (event.payload.step === 'complete' || event.payload.step === 'error') {
           setIsUpdatingFirmware(false);
+
+          if (!document.hasFocus()) {
+            void (async () => {
+              let granted = await isPermissionGranted();
+              if (!granted) {
+                const permission = await requestPermission();
+                granted = permission === 'granted';
+              }
+              if (granted) {
+                sendNotification({
+                  title: 'Firmware update',
+                  body: event.payload.message,
+                });
+              }
+            })();
+          }
         }
       });
     };

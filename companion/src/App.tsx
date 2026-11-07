@@ -605,13 +605,15 @@ function App() {
               onAuthenticated={completeDeviceAuthSetup}
             />
           ) : null}
-          {page === 'device' && selectedDevice ? (
-            <DevicePage
-              device={selectedDevice}
-              onBack={goBackToDevices}
-              onDeviceUpdated={handleDeviceUpdated}
-              developerMode={settings.developer.enabled}
-            />
+          {selectedDevice ? (
+            <div style={{ display: page === 'device' ? 'block' : 'none' }}>
+              <DevicePage
+                device={selectedDevice}
+                onBack={goBackToDevices}
+                onDeviceUpdated={handleDeviceUpdated}
+                developerMode={settings.developer.enabled}
+              />
+            </div>
           ) : null}
         </Suspense>
       </main>
