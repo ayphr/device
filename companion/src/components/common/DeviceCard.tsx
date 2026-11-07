@@ -22,6 +22,7 @@ export interface DeviceCardProps {
   signalStrength: number; // 0 to 5
   connected: boolean;
   setupComplete: boolean;
+  isOpening?: boolean;
   subtitle?: string;
   subtitleIcon?: React.ReactNode;
 }
@@ -34,6 +35,7 @@ export const DeviceCard = ({
   signalStrength,
   connected,
   setupComplete,
+  isOpening = false,
   subtitle,
   subtitleIcon,
 }: DeviceCardProps) => {
@@ -116,8 +118,16 @@ export const DeviceCard = ({
         className={`${styles['device-card']} ${elevated ? styles['device-card--elevated'] : ''} ${styles['device-card--clickable']}`.trim()}
         type="button"
         onClick={onClick}
+        disabled={isOpening}
+        aria-busy={isOpening}
       >
         {cardBody}
+        {isOpening ? (
+          <span className={styles['device-card__opening-status']} role="status">
+            <span className={styles['device-card__opening-spinner']} />
+            Connecting to device...
+          </span>
+        ) : null}
       </button>
     );
   }

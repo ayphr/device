@@ -7,10 +7,11 @@ import styles from './Home.module.css';
 interface HomeProps {
   readonly devices: DeviceInfo[];
   readonly isSearchingForGeoDevices: boolean;
+  readonly openingDeviceId: string | null;
   readonly onOpenDevice: (device: DeviceInfo) => void;
 }
 
-export default function Home({ devices, isSearchingForGeoDevices, onOpenDevice }: Readonly<HomeProps>) {
+export default function Home({ devices, isSearchingForGeoDevices, openingDeviceId, onOpenDevice }: Readonly<HomeProps>) {
   function getModelIcon(id: string): ReactNode {
     switch (id) {
       case 'geo-gen1':
@@ -39,6 +40,7 @@ export default function Home({ devices, isSearchingForGeoDevices, onOpenDevice }
               signalStrength={device.signalStrength}
               connected={device.connected}
               setupComplete={device.setupComplete}
+              isOpening={openingDeviceId === device.id}
               onClick={() => onOpenDevice(device)}
             />
           ))}

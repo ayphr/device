@@ -112,6 +112,7 @@ function App() {
   const [page, setPage] = useState<CurrentPage>('home');
   const [selectedDevice, setSelectedDevice] = useState<DeviceInfo | null>(null);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
+  const [openingDeviceId, setOpeningDeviceId] = useState<string | null>(null);
   const [isSearchingForGeoDevices, setIsSearchingForGeoDevices] = useState(true);
   const [settings, setSettings] = useState<AppSettings>(() => loadAppSettings());
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
@@ -396,11 +397,17 @@ function App() {
   }, [devices, page, selectedDevice]);
 
   const openDevice = async (device: DeviceInfo) => {
+    if (openingDeviceId !== null) {
+      return;
+    }
+
     setSelectedDevice(device);
     setConnectionError(null);
+    setOpeningDeviceId(device.id);
 
     if (!device.setupComplete) {
       setPage('setup');
+      setOpeningDeviceId(null);
       return;
     }
 
@@ -442,6 +449,8 @@ function App() {
       // Authentication is only safe to request after a successful status
       // response confirms that the device requires it.
       setPage('home');
+    } finally {
+      setOpeningDeviceId(null);
     }
   };
 
@@ -565,6 +574,7 @@ function App() {
             <Home
               devices={devices}
               isSearchingForGeoDevices={isSearchingForGeoDevices}
+              openingDeviceId={openingDeviceId}
               onOpenDevice={openDevice}
             />
           )}

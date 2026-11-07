@@ -11,6 +11,10 @@ declare const classNames: {
   readonly "device-page__back": "device-page__back";
   readonly "device-page__hero": "device-page__hero";
   readonly "device-page__panel": "device-page__panel";
+  readonly "device-page__panel-intro": "device-page__panel-intro";
+  readonly "device-page__panel-heading": "device-page__panel-heading";
+  readonly "device-page__status": "device-page__status";
+  readonly "device-page__status-dot": "device-page__status-dot";
   readonly "device-page__eyebrow": "device-page__eyebrow";
   readonly "device-page__metrics": "device-page__metrics";
   readonly "device-page__metric-card": "device-page__metric-card";
@@ -20,6 +24,9 @@ declare const classNames: {
   readonly "device-page__control-list": "device-page__control-list";
   readonly "device-page__setting-row": "device-page__setting-row";
   readonly "device-page__setting-list": "device-page__setting-list";
+  readonly "device-page__number-control": "device-page__number-control";
+  readonly "device-page__current-settings": "device-page__current-settings";
+  readonly "device-page__modal-help": "device-page__modal-help";
   readonly "device-page__setting-value": "device-page__setting-value";
   readonly "device-page__update-banner": "device-page__update-banner";
   readonly "device-page__update-info": "device-page__update-info";
@@ -34,5 +41,6 @@ declare const classNames: {
   readonly "device-page__step": "device-page__step";
   readonly "device-page__step--done": "device-page__step--done";
   readonly "device-page__update-error": "device-page__update-error";
+  readonly "device-page__success": "device-page__success";
 };
 export = classNames;
