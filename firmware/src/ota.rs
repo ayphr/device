@@ -151,7 +151,7 @@ pub fn end() -> Result<(), &'static str> {
     // Run the whole finalization step on a thread with a generous stack to avoid
     // a stack protection fault during verification.
     let handle = std::thread::Builder::new()
-        .stack_size(128 * 1024)
+        .stack_size(16 * 1024)
         .spawn(|| {
             let mut state = lock_ota_state()?;
 
