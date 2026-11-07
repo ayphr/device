@@ -1,6 +1,6 @@
 use esp32_nimble::utilities::mutex::Mutex;
 use esp32_nimble::{BLEAdvertisementData, BLECharacteristic, BLEDevice, NimbleProperties};
-use log::{info, warn};
+use log::{debug, info, warn};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -102,7 +102,7 @@ pub fn init(setup: Arc<DeviceSetup>) {
             return;
         }
 
-        info!("Received BLE request chunk bytes={}", incoming.len());
+        debug!("Received BLE request chunk bytes={}", incoming.len());
 
         let mut responses: Vec<Vec<u8>> = Vec::new();
         if let Ok(mut buffer) = BLE_RX_BUFFER.lock() {
@@ -128,7 +128,7 @@ pub fn init(setup: Arc<DeviceSetup>) {
 
                 buffer.drain(..BLE_FRAME_HEADER_LEN);
                 let command: Vec<u8> = buffer.drain(..expected_len).collect();
-                info!("Processing reassembled BLE request bytes={}", command.len());
+                debug!("Processing reassembled BLE request bytes={}", command.len());
                 let response = command_processor::process_ble_request(&setup_handler, &command);
                 if !response.is_empty() {
                     responses.push(response);

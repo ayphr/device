@@ -1,6 +1,6 @@
 use esp_idf_svc::io::Write;
 use esp_idf_svc::ota::{EspOta, EspOtaUpdate};
-use log::{info, warn};
+use log::{debug, info, warn};
 use std::sync::Mutex;
 
 use ayphr_protocol::{verify_firmware_digest_signature, FirmwareHasher, FIRMWARE_SIGNATURE_LEN};
@@ -123,7 +123,7 @@ pub fn write_data(seq: u32, data: &[u8]) -> Result<(), &'static str> {
 
     state.bytes_written += data.len();
     state.next_seq = state.next_seq.wrapping_add(1);
-    info!(
+    debug!(
         "OTA progress: {}/{} bytes ({:.1}%)",
         state.bytes_written,
         state.total_size,

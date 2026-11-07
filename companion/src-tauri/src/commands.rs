@@ -10,7 +10,7 @@ use ayphr_protocol::{
 };
 use tauri::{AppHandle, Emitter};
 
-use crate::constants::OTA_BEGIN_TIMEOUT;
+use crate::constants::{OTA_BEGIN_TIMEOUT, OTA_DATA_TIMEOUT};
 use crate::protocol::{format_bytes, log_string_error};
 use crate::transport::Transport;
 use crate::types::{
@@ -458,12 +458,12 @@ impl<'a> OtaWriter<'a> {
         }
 
         let batch = std::mem::take(&mut self.pending);
-        let responses = self
-            .transport
-            .send_commands_batch(batch)
-            .await
-            .map_err(|e| log_string_error("OTA data failed", e, self.label))?;
-        for response in &responses {
+        for command in batch {
+            let response = self
+                .transport
+                .send_command_with_timeout(command, OTA_DATA_TIMEOUT)
+                .await
+                .map_err(|e| log_string_error("OTA data failed", e, self.label))?;
             if response.first().copied() != Some(RESPONSE_OTA_DATA_OK) {
                 return Err(log_string_error(
                     "OTA data rejected",
