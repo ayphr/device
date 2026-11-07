@@ -44,8 +44,8 @@ pub const RESPONSE_CLOUD_UNLINK_OK: u8 = 0x95;
 pub const RESPONSE_DEVICE_IDENTITY: u8 = 0x96;
 pub const RESPONSE_ERROR: u8 = 0xFF;
 
-pub const SERIAL_CHUNK_SIZE: usize = 4096;
-pub const BLE_CHUNK_SIZE: usize = 1024;
+pub const SERIAL_CHUNK_SIZE: usize = 8184;
+pub const BLE_CHUNK_SIZE: usize = 4091;
 
 pub const BLE_FRAME_HEADER_LEN: usize = 2;
 pub const BLE_NOTIFY_CHUNK_SIZE: usize = 20;
